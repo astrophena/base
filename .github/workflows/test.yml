@@ -1,0 +1,16 @@
+name: 'Test'
+on:
+  push:
+    branches: ['master']
+  pull_request:
+jobs:
+  test:
+    name: 'Test'
+    runs-on: 'ubuntu-latest'
+    steps:
+      - name: 'Check out'
+        uses: 'actions/checkout@v4'
+      - name: 'Set up Go'
+        uses: 'actions/setup-go@v5'
+      - name: 'Test'
+        run: 'go test -race ./... -count=1'
