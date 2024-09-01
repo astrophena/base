@@ -139,14 +139,3 @@ func MockHTTPClient(h http.Handler) *http.Client {
 		}),
 	}
 }
-
-// Check is a simple error handling function for tests that can be used like
-// this:
-//
-//	hosts := testutil.Check(t, os.ReadFile("/etc/hosts"))
-func Check[T any](t *testing.T, val T, err error) T {
-	if err != nil {
-		t.Fatal(err)
-	}
-	return val
-}
