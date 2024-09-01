@@ -130,13 +130,23 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 
 // MockHTTPClient returns a [http.Client] that serves all requests made through
 // it from handler h.
-func MockHTTPClient(t *testing.T, h http.Handler) *http.Client {
-	httpc := &http.Client{
+func MockHTTPClient(h http.Handler) *http.Client {
+	return &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, r)
 			return w.Result(), nil
 		}),
 	}
-	return httpc
+}
+
+// Check is a simple error handling function for tests that can be used like
+// this:
+//
+//	hosts := testutil.Check(t, os.ReadFile("/etc/hosts"))
+func Check[T any](t *testing.T, val T, err error) T {
+	if err != nil {
+		t.Fatal(err)
+	}
+	return val
 }
