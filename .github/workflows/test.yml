@@ -14,3 +14,9 @@ jobs:
         uses: 'actions/setup-go@v5'
       - name: 'Test'
         run: 'go test -race ./... -count=1'
+      - name: 'Trigger vanity deploy'
+        if: "github.ref == 'refs/heads/master'"
+        env:
+          VANITY_DEPLOY_HOOK: '${{ secrets.VANITY_DEPLOY_HOOK }}'
+        run: |
+          curl "$VANITY_DEPLOY_HOOK"
