@@ -100,7 +100,7 @@ func RunGolden(t *testing.T, glob string, f func(t *testing.T, match string) []b
 			t.Fatalf("unable to read golden file %q: %v", golden, err)
 		}
 
-		AssertEqual(t, want, got)
+		AssertEqual(t, got, want)
 	})
 }
 
