@@ -7,10 +7,12 @@ package testutil
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -52,6 +54,22 @@ func AssertEqual(t *testing.T, got, want any) {
 	t.Helper()
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("(-got +want):\n%s", diff)
+	}
+}
+
+// AssertErrorType asserts that the got error is of the same type as the want
+// error. It does not compare error messages or values, only the types.
+func AssertErrorType(t *testing.T, got, want error) {
+	t.Helper()
+	gotErr := reflect.Zero(reflect.TypeOf(want)).Interface()
+	fail := func() {
+		t.Errorf("want error type %T, got %T", want, got)
+	}
+	if !errors.As(got, &gotErr) {
+		fail()
+	}
+	if gotErr != nil && reflect.TypeOf(gotErr) != reflect.TypeOf(want) {
+		fail()
 	}
 }
 
