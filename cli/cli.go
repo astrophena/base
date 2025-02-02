@@ -233,8 +233,6 @@ var (
 //
 // The parsed documentation will be included in the help message.
 //
-// # Example usage
-//
 // In application's doc.go:
 //
 //	/*
