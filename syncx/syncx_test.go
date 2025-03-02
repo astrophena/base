@@ -20,7 +20,7 @@ func TestProtected(t *testing.T) {
 	t.Run("read access", func(t *testing.T) {
 		p := Protect(42)
 		var result int
-		p.RAccess(func(val int) {
+		p.ReadAccess(func(val int) {
 			result = val
 		})
 		testutil.AssertEqual(t, result, 42)
@@ -29,11 +29,11 @@ func TestProtected(t *testing.T) {
 	t.Run("write access", func(t *testing.T) {
 		var i int
 		p := Protect(&i)
-		p.Access(func(val *int) {
+		p.WriteAccess(func(val *int) {
 			*val = 43 // Modify the value.
 		})
 		var result int
-		p.RAccess(func(val *int) { result = *val }) // Verify change.
+		p.ReadAccess(func(val *int) { result = *val }) // Verify change.
 		testutil.AssertEqual(t, result, 43)
 	})
 
@@ -45,7 +45,7 @@ func TestProtected(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				p.Access(func(val *int) {
+				p.WriteAccess(func(val *int) {
 					*val += 1
 				})
 			}()
@@ -53,7 +53,7 @@ func TestProtected(t *testing.T) {
 		wg.Wait()
 
 		var result int
-		p.RAccess(func(val *int) { result = *val })
+		p.ReadAccess(func(val *int) { result = *val })
 		testutil.AssertEqual(t, result, 100)
 	})
 }

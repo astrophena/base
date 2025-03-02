@@ -16,17 +16,17 @@ type Protected[T any] struct {
 	val T
 }
 
-// RAccess provides read access to the protected value.
+// ReadAccess provides read access to the protected value.
 // It executes the provided function f with the value under a read lock.
-func (p *Protected[T]) RAccess(f func(T)) {
+func (p *Protected[T]) ReadAccess(f func(T)) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	f(p.val)
 }
 
-// Access provides write access to the protected value.
+// WriteAccess provides write access to the protected value.
 // It executes the provided function f with the value under a write lock.
-func (p *Protected[T]) Access(f func(T)) {
+func (p *Protected[T]) WriteAccess(f func(T)) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	f(p.val)
