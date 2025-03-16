@@ -2,10 +2,7 @@
 // Use of this source code is governed by the ISC
 // license that can be found in the LICENSE.md file.
 
-//go:build ignore
-
-// copyright.go adds copyright header to each Go file.
-
+// Addcopyright adds copyright header to each Go file.
 package main
 
 import (
@@ -18,14 +15,24 @@ import (
 	"strings"
 )
 
-const tmpl = `// © %d Ilya Mateyko. All rights reserved.
+var templates = map[string]string{
+	".go": `// © %d Ilya Mateyko. All rights reserved.
 // Use of this source code is governed by the ISC
 // license that can be found in the LICENSE.md file.
 
-`
+`,
+}
+
+var headers = map[string]string{
+	".go": `// ©`,
+}
 
 var exclusions = []string{
+	// Based on Go's standard library code.
 	"txtar/txtar.go",
+	// Based on Tailscale code.
+	"web/debug.go",
+	"web/debug_test.go",
 }
 
 func isExcluded(path string) bool {
@@ -43,7 +50,16 @@ func main() {
 			return err
 		}
 
-		if d.IsDir() || filepath.Ext(path) != ".go" || isExcluded(path) {
+		if d.IsDir() || isExcluded(path) {
+			return nil
+		}
+		ext := filepath.Ext(path)
+		tmpl, ok := templates[ext]
+		if !ok {
+			return nil
+		}
+		header, ok := headers[ext]
+		if !ok {
 			return nil
 		}
 
@@ -57,18 +73,15 @@ func main() {
 			return err
 		}
 
-		if bytes.HasPrefix(content, []byte("//usr/bin/env")) {
-			return nil // Shebang
-		}
-		if bytes.HasPrefix(content, []byte("// ©")) {
+		if bytes.HasPrefix(content, []byte(header)) {
 			return nil // Already has a copyright header
 		}
 
 		year := info.ModTime().Year()
-		header := fmt.Sprintf(tmpl, year)
+		hdr := fmt.Sprintf(tmpl, year)
 
 		var buf bytes.Buffer
-		buf.WriteString(header)
+		buf.WriteString(hdr)
 		buf.Write(content)
 
 		return os.WriteFile(path, buf.Bytes(), 0o644)

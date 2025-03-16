@@ -1,6 +1,0 @@
-#!/bin/sh
-
-echo "==> Running pre-commit check..."
-go generate # update copyrights and README.md
-go tool staticcheck ./...
-go test ./...

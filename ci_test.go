@@ -4,7 +4,7 @@
 
 package base
 
-//go:generate go run devtools/gen/copyright.go
+//go:generate go tool addcopyright
 
 import (
 	"bytes"
