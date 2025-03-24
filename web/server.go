@@ -6,6 +6,7 @@ package web
 
 import (
 	"context"
+	"crypto/tls"
 	"embed"
 	"errors"
 	"fmt"
@@ -24,6 +25,7 @@ import (
 	"go.astrophena.name/base/version"
 
 	"github.com/benbjohnson/hashfs"
+	"github.com/tailscale/tscert"
 	"golang.org/x/crypto/acme/autocert"
 )
 
@@ -49,6 +51,8 @@ type Server struct {
 	// "example.com" or "exp.astrophena.name"), the server accepts HTTPS
 	// connections on :443, redirects HTTP connections to HTTPS on :80 and
 	// automatically obtains a certificate from Let's Encrypt.
+	// If Addr ends on ts.net (for example, "example.magic-wormhole.ts.net"),
+	// the server obtains a certificate using tscert.GetCertificate instead.
 	Addr string
 	// Ready specifies an optional function to be called when the server is ready
 	// to serve requests.
@@ -209,6 +213,14 @@ var StaticFS = hashfs.NewFS(staticFS)
 
 func obtainListener(c *Server) (l net.Listener, isTLS bool, err error) {
 	host, _, hasPort := strings.Cut(c.Addr, ":")
+
+	// Runs on Tailscale, so use their way to obtain a certificate.
+	if strings.HasSuffix(host, "ts.net") {
+		l, err = tls.Listen("tcp", ":https", &tls.Config{
+			GetCertificate: tscert.GetCertificate,
+		})
+		return l, true, err
+	}
 
 	// Accept HTTPS connections only and obtain Let's Encrypt certificate.
 	if host != "localhost" && !hasPort {
