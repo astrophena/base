@@ -249,7 +249,7 @@ var (
 //	import (
 //		_ "embed"
 //
-//		"go.astrophena.name/tools/internal/cli"
+//		"go.astrophena.name/base/cli"
 //	)
 //
 //	//go:embed doc.go
