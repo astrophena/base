@@ -16,14 +16,15 @@ import (
 
 // Info is the version and build information of the current binary.
 type Info struct {
-	Name    string `json:"name"`     // name of the program
-	Version string `json:"version"`  // BuildInfo's module version
-	Commit  string `json:"commit"`   // BuildInfo's vcs.revision
-	BuiltAt string `json:"built_at"` // BuildInfo's vcs.date
-	Dirty   bool   `json:"dirty"`    // BuildInfo's vcs.modified
-	Go      string `json:"go"`       // runtime.Version()
-	OS      string `json:"os"`       // runtime.GOOS
-	Arch    string `json:"arch"`     // runtime.GOARCH
+	Name       string `json:"name"`        // name of the program
+	Version    string `json:"version"`     // BuildInfo's module version
+	Commit     string `json:"commit"`      // BuildInfo's vcs.revision
+	BuiltAt    string `json:"built_at"`    // BuildInfo's vcs.date
+	Dirty      bool   `json:"dirty"`       // BuildInfo's vcs.modified
+	Go         string `json:"go"`          // runtime.Version()
+	OS         string `json:"os"`          // runtime.GOOS
+	Arch       string `json:"arch"`        // runtime.GOARCH
+	ModuleName string `json:"module_name"` // set for go.astrophena.name/* repos
 }
 
 // String implements the [fmt.Stringer] interface.
@@ -86,6 +87,12 @@ func loadInfo(buildinfo func() (*debug.BuildInfo, bool)) Info {
 	i.Version = bi.Main.Version
 	if i.Version == "(devel)" {
 		i.Version = "git"
+	}
+
+	if strings.HasPrefix(bi.Path, "go.astrophena.name") {
+		if parts := strings.Split(bi.Path, "/"); len(parts) > 1 {
+			i.ModuleName = parts[1]
+		}
 	}
 
 	i.Name = strings.TrimPrefix(bi.Path, bi.Main.Path)
