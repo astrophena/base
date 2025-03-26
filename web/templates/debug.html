@@ -33,7 +33,7 @@
               <td>
                 <!-- Set only for go.astrophena.name/* modules. -->
                 {{ if .Version.ModuleName }}
-                  <a href="https://github.com/astrophena/{{ .Version.ModuleName }}/{{ .Version.Commit }}">
+                  <a href="https://github.com/astrophena/{{ .Version.ModuleName }}/commit/{{ .Version.Commit }}">
                     {{ .Version.Commit }}
                   </a>
                 {{ else }}
