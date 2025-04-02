@@ -2,7 +2,7 @@
 // Use of this source code is governed by the ISC
 // license that can be found in the LICENSE.md file.
 
-// Package request provides utilities for making HTTP requests.
+// Package request provides a simplified way to make HTTP requests, especially for JSON APIs.
 package request
 
 import (
@@ -17,15 +17,6 @@ import (
 	"time"
 )
 
-// DefaultClient is a [http.Client] with nice defaults.
-var DefaultClient = &http.Client{
-	Timeout: 10 * time.Second,
-}
-
-// IgnoreResponse is used as a type parameter in [Make] function to prevent
-// parsing response as JSON.
-type IgnoreResponse struct{}
-
 // Params defines the parameters needed for making an HTTP request.
 type Params struct {
 	// Method is the HTTP method (GET, POST, etc.) for the request.
@@ -38,7 +29,7 @@ type Params struct {
 	// JSON or, if it's type is url.Values, as query string with Content-Type
 	// header set to "application/x-www-form-urlencoded".
 	Body any
-	// HTTPClient is an optional custom HTTP client object to use for the request.
+	// HTTPClient is an optional custom http.Client to use for the request.
 	// If not provided, DefaultClient will be used.
 	HTTPClient *http.Client
 	// Scrubber is an optional strings.Replacer that scrubs unwanted data from
@@ -46,29 +37,25 @@ type Params struct {
 	Scrubber *strings.Replacer
 }
 
-type scrubbedError struct {
-	err      error
-	scrubber *strings.Replacer
-}
-
-func (se *scrubbedError) Error() string {
-	if se.scrubber != nil {
-		return se.scrubber.Replace(se.err.Error())
-	}
-	return se.err.Error()
-}
-
-func (se *scrubbedError) Unwrap() error { return se.err }
-
-func scrubErr(err error, scrubber *strings.Replacer) error {
-	return &scrubbedError{err: err, scrubber: scrubber}
-}
-
-// Make makes a HTTP request with the provided parameters and unmarshals the
-// response body into the specified type.
+// DefaultClient is the default [http.Client] used by [Make].
 //
-// It supports JSON or URL-encoded format for request bodies and JSON for
-// request responses.
+// It has a timeout of 10 seconds to prevent requests from hanging indefinitely.
+var DefaultClient = &http.Client{
+	Timeout: 10 * time.Second,
+}
+
+// IgnoreResponse is a type to use with [Make] to skip JSON unmarshaling of the response body.
+type IgnoreResponse struct{}
+
+// Make sends an HTTP request and tries to parse the JSON response.
+//
+// The Response type parameter determines how the response body is handled:
+//
+//   - If Response is [IgnoreResponse], the response body is ignored and no parsing is attempted.
+//   - Otherwise, the response body is expected to be JSON and is unmarshaled into a variable of type Response.
+//
+// It returns the parsed response of type Response and an error if the request fails or parsing fails.
+// For non-200 status codes, it returns an error containing the status code and response body.
 func Make[Response any](ctx context.Context, p Params) (Response, error) {
 	var resp Response
 
@@ -140,4 +127,22 @@ func Make[Response any](ctx context.Context, p Params) (Response, error) {
 	}
 
 	return resp, nil
+}
+
+type scrubbedError struct {
+	err      error
+	scrubber *strings.Replacer
+}
+
+func (se *scrubbedError) Error() string {
+	if se.scrubber != nil {
+		return se.scrubber.Replace(se.err.Error())
+	}
+	return se.err.Error()
+}
+
+func (se *scrubbedError) Unwrap() error { return se.err }
+
+func scrubErr(err error, scrubber *strings.Replacer) error {
+	return &scrubbedError{err: err, scrubber: scrubber}
 }
