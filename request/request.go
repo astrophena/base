@@ -22,6 +22,10 @@ var DefaultClient = &http.Client{
 	Timeout: 10 * time.Second,
 }
 
+// IgnoreResponse is used as a type parameter in [Make] function to prevent
+// parsing response as JSON.
+type IgnoreResponse struct{}
+
 // Params defines the parameters needed for making an HTTP request.
 type Params struct {
 	// Method is the HTTP method (GET, POST, etc.) for the request.
@@ -124,6 +128,11 @@ func Make[Response any](ctx context.Context, p Params) (Response, error) {
 
 	if res.StatusCode != http.StatusOK {
 		return resp, scrubErr(fmt.Errorf("%s %q: want 200, got %d: %s", p.Method, p.URL, res.StatusCode, b), p.Scrubber)
+	}
+
+	_, skipUnmarshal := any(resp).(IgnoreResponse)
+	if skipUnmarshal {
+		return resp, nil
 	}
 
 	if err := json.Unmarshal(b, &resp); err != nil {
