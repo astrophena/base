@@ -6,15 +6,12 @@ package web
 
 import (
 	"context"
-	"crypto/tls"
 	"embed"
 	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -25,8 +22,6 @@ import (
 	"go.astrophena.name/base/version"
 
 	"github.com/benbjohnson/hashfs"
-	"github.com/tailscale/tscert"
-	"golang.org/x/crypto/acme/autocert"
 )
 
 //go:generate curl --fail-with-body -s -o static/css/main.css https://astrophena.name/css/main.css
@@ -44,15 +39,7 @@ type Server struct {
 	// Middleware specifies an optional slice of HTTP middleware that's applied to
 	// each request.
 	Middleware []Middleware
-
 	// Addr is a network address to listen on (in the form of "host:port").
-	//
-	// If Addr is not localhost and doesn't contain a port (for example,
-	// "example.com" or "exp.astrophena.name"), the server accepts HTTPS
-	// connections on :443, redirects HTTP connections to HTTPS on :80 and
-	// automatically obtains a certificate from Let's Encrypt.
-	// If Addr ends on ts.net (for example, "example.magic-wormhole.ts.net"),
-	// the server obtains a certificate using tscert.GetCertificate instead.
 	Addr string
 	// Ready specifies an optional function to be called when the server is ready
 	// to serve requests.
@@ -66,9 +53,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.handler.Get(s.initHandler).ServeHTTP(w, r)
 }
 
-// Stolen from https://github.com/tailscale/tailscale/blob/4ad3f01225745294474f1ae0de33e5a86824a744/safeweb/http.go.
-
 // The Content-Security-Policy header.
+// Based on https://github.com/tailscale/tailscale/blob/4ad3f01225745294474f1ae0de33e5a86824a744/safeweb/http.go.
 var cspHeader = strings.Join([]string{
 	`default-src 'self'`,      // origin is the only valid source for all content types
 	`script-src 'self'`,       // disallow inline javascript
@@ -78,10 +64,6 @@ var cspHeader = strings.Join([]string{
 	`block-all-mixed-content`, // disallow mixed content when serving over HTTPS
 	`object-src 'self'`,       // disallow embedding of resources from other origins
 }, "; ")
-
-// The Strict-Transport-Security header. This header tells the browser
-// to exclusively use HTTPS for all requests to the origin for the next year.
-const hstsHeader = "max-age=31536000"
 
 var (
 	errNoAddr = errors.New("server.Addr is empty")
@@ -99,21 +81,8 @@ func setHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referer-Policy", "same-origin")
 		w.Header().Set("Content-Security-Policy", cspHeader)
-		if isHTTPS(r) {
-			w.Header().Set("Strict-Transport-Security", hstsHeader)
-		}
 		next.ServeHTTP(w, r)
 	})
-}
-
-func isHTTPS(r *http.Request) bool {
-	if r.TLS != nil {
-		return true
-	}
-	if r.Header.Get("X-Forwarded-Proto") == "https" {
-		return true
-	}
-	return false
 }
 
 func (s *Server) initHandler() http.Handler {
@@ -145,28 +114,18 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		return errNoAddr
 	}
 
-	l, isTLS, err := obtainListener(s)
+	env := cli.GetEnv(ctx)
+
+	l, err := net.Listen("tcp", s.Addr)
 	if err != nil {
 		return fmt.Errorf("%w: %v", errListen, err)
 	}
-	defer l.Close()
-
 	scheme, host := "http", l.Addr().String()
-	if isTLS {
-		scheme, host = "https", s.Addr
-	}
 
-	logf := cli.GetEnv(ctx).Logf
-
-	logf("Listening on %s://%s...", scheme, host)
-
-	// Redirect HTTP requests to HTTPS.
-	if isTLS {
-		go httpRedirect(ctx)
-	}
+	env.Logf("Listening on %s://%s...", scheme, host)
 
 	httpSrv := &http.Server{
-		ErrorLog: log.New(logger.Logf(logf), "", 0),
+		ErrorLog: log.New(logger.Logf(env.Logf), "", 0),
 		Handler:  s,
 		BaseContext: func(_ net.Listener) context.Context {
 			return cli.WithEnv(context.Background(), cli.GetEnv(ctx))
@@ -191,7 +150,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	case err := <-errCh:
 		return err
 	case <-ctx.Done():
-		logf("Gracefully shutting down...")
+		env.Logf("Gracefully shutting down...")
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -210,64 +169,3 @@ var staticFS embed.FS
 // StaticFS is an [embed.FS] that contains static resources served on /static/ path
 // prefix of [Server] HTTP handlers.
 var StaticFS = hashfs.NewFS(staticFS)
-
-func obtainListener(c *Server) (l net.Listener, isTLS bool, err error) {
-	host, _, hasPort := strings.Cut(c.Addr, ":")
-
-	// Runs on Tailscale, so use their way to obtain a certificate.
-	if strings.HasSuffix(host, "ts.net") {
-		l, err = tls.Listen("tcp", ":https", &tls.Config{
-			GetCertificate: tscert.GetCertificate,
-		})
-		return l, true, err
-	}
-
-	// Accept HTTPS connections only and obtain Let's Encrypt certificate.
-	if host != "localhost" && !hasPort {
-		m := &autocert.Manager{
-			Prompt:     autocert.AcceptTOS,
-			Cache:      autocert.DirCache(cacheDir()),
-			HostPolicy: autocert.HostWhitelist(c.Addr),
-		}
-		return m.Listener(), true, nil
-	}
-
-	l, err = net.Listen("tcp", c.Addr)
-	return l, false, err
-}
-
-func cacheDir() string {
-	// Three variants where we can keep certificate cache:
-	//
-	//  a. in systemd unit state directory (i.e. /var/lib/private/...)
-	//  b. in cache directory (i.e. ~/.cache on Linux)
-	//  c. in OS temporary directory if everything fails
-	//
-	dir, err := os.UserCacheDir()
-	if stateDir := os.Getenv("STATE_DIRECTORY"); stateDir != "" {
-		return filepath.Join(stateDir, "certs")
-	} else if err != nil {
-		return filepath.Join(os.TempDir(), version.Version().Name, "certs")
-	}
-	return filepath.Join(dir, version.Version().Name, "certs")
-}
-
-// httpRedirect redirects HTTP requests to HTTPS and runs in a separate
-// goroutine.
-func httpRedirect(ctx context.Context) {
-	logf := cli.GetEnv(ctx).Logf
-	s := &http.Server{
-		Addr: ":80",
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			target := "https://" + r.Host + r.URL.Path
-			http.Redirect(w, r, target, http.StatusMovedPermanently)
-		}),
-	}
-	go func() {
-		<-ctx.Done()
-		s.Shutdown(ctx)
-	}()
-	if err := s.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		logf("web.Server: HTTP to HTTPS redirect goroutine crashed: %v", err)
-	}
-}
