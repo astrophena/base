@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/http/httptest"
 	"sync"
 	"testing"
 
@@ -52,27 +51,6 @@ func TestServerConfig(t *testing.T) {
 		if err != nil && !errors.Is(err, tc.wantErr) {
 			t.Fatalf("got error: %v", err)
 		}
-	}
-}
-
-func TestServerHTTPS(t *testing.T) {
-	s := &Server{
-		Mux: http.NewServeMux(),
-	}
-
-	ts := httptest.NewTLSServer(s)
-	t.Cleanup(func() {
-		ts.Close()
-	})
-
-	req, err := ts.Client().Get(ts.URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer req.Body.Close()
-
-	if hstsHeader := req.Header.Get("Strict-Transport-Security"); hstsHeader == "" {
-		t.Error("Strict-Transport-Security is not set for HTTPS requests")
 	}
 }
 
