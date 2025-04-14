@@ -63,7 +63,7 @@ var ErrExitVersion = &unprintableError{errors.New("version flag exit")}
 
 // ErrInvalidArgs indicates that the command-line arguments provided to the
 // application are invalid or insufficient.
-
+//
 // This error should be wrapped with fmt.Errorf to provide a specific,
 // user-friendly message explaining the nature of the invalid arguments.
 //
