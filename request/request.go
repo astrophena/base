@@ -47,6 +47,24 @@ var DefaultClient = &http.Client{
 // IgnoreResponse is a type to use with [Make] to skip JSON unmarshaling of the response body.
 type IgnoreResponse struct{}
 
+// StatusError represents an error where an HTTP request returned
+// an unexpected status code.
+type StatusError struct {
+	// WantedStatusCode is the HTTP status code that was expected by the caller
+	// (e.g., http.StatusOK).
+	WantedStatusCode int
+	// StatusCode is the actual HTTP status code received in the response.
+	StatusCode int
+	// Headers are the HTTP headers from the response.
+	Headers http.Header
+	// Body is the raw body of the HTTP response.
+	Body []byte
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("want %d, got %d: %s", e.WantedStatusCode, e.StatusCode, e.Body)
+}
+
 // Make sends an HTTP request and tries to parse the JSON response.
 //
 // The Response type parameter determines how the response body is handled:
@@ -114,7 +132,12 @@ func Make[Response any](ctx context.Context, p Params) (Response, error) {
 	}
 
 	if res.StatusCode != http.StatusOK {
-		return resp, scrubErr(fmt.Errorf("%s %q: want 200, got %d: %s", p.Method, p.URL, res.StatusCode, b), p.Scrubber)
+		return resp, scrubErr(fmt.Errorf("%s %q: %w", p.Method, p.URL, &StatusError{
+			WantedStatusCode: http.StatusOK,
+			StatusCode:       res.StatusCode,
+			Headers:          res.Header,
+			Body:             b,
+		}), p.Scrubber)
 	}
 
 	_, skipUnmarshal := any(resp).(IgnoreResponse)
