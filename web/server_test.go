@@ -75,15 +75,16 @@ func TestServerListenAndServe(t *testing.T) {
 		Stderr: logger.Logf(t.Logf),
 	}
 
+	s := &Server{
+		Addr:       addr,
+		Mux:        http.NewServeMux(),
+		Debuggable: true,
+		Ready:      readyFunc,
+	}
+
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		s := &Server{
-			Addr:       addr,
-			Mux:        http.NewServeMux(),
-			Debuggable: true,
-			Ready:      readyFunc,
-		}
 		if err := s.ListenAndServe(cli.WithEnv(ctx, env)); err != nil {
 			errCh <- err
 		}
@@ -102,7 +103,7 @@ func TestServerListenAndServe(t *testing.T) {
 		wantStatus int
 	}{
 		{url: "/static/css/main.css", wantStatus: http.StatusOK},
-		{url: "/static/" + StaticFS.HashName("css/main.css"), wantStatus: http.StatusOK},
+		{url: "/" + s.StaticHashName("static/css/main.css"), wantStatus: http.StatusOK},
 		{url: "/health", wantStatus: http.StatusOK},
 		{url: "/version", wantStatus: http.StatusOK},
 	}
