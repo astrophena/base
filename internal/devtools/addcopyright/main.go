@@ -28,6 +28,9 @@ var headers = map[string]string{
 }
 
 var exclusions = []string{
+	// Based on Go's telemetry code.
+	"internal/unionfs/unionfs.go",
+	"internal/unionfs/unionfs_test.go",
 	// Based on Go's standard library code.
 	"txtar/txtar.go",
 	// Based on Tailscale code.

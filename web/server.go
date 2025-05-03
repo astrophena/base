@@ -9,6 +9,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"net"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"go.astrophena.name/base/cli"
+	"go.astrophena.name/base/internal/unionfs"
 	"go.astrophena.name/base/logger"
 	"go.astrophena.name/base/syncx"
 	"go.astrophena.name/base/version"
@@ -44,13 +46,23 @@ type Server struct {
 	// Ready specifies an optional function to be called when the server is ready
 	// to serve requests.
 	Ready func()
+	// StaticFS specifies an optional filesystem containing static assets (like CSS,
+	// JS, images) to be served. If provided, it's combined with the embedded
+	// StaticFS and served under the "/static/" path prefix.
+	// Files in this FS take precedence over the embedded ones if names conflict.
+	StaticFS fs.FS
 
-	handler syncx.Lazy[http.Handler]
+	handler syncx.Lazy[*handler]
+}
+
+type handler struct {
+	handler http.Handler
+	static  *hashfs.FS
 }
 
 // ServeHTTP implements the [http.Handler] interface.
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	s.handler.Get(s.initHandler).ServeHTTP(w, r)
+	s.handler.Get(s.initHandler).handler.ServeHTTP(w, r)
 }
 
 // The Content-Security-Policy header.
@@ -85,13 +97,22 @@ func setHeaders(next http.Handler) http.Handler {
 	})
 }
 
-func (s *Server) initHandler() http.Handler {
+func (s *Server) initHandler() *handler {
 	if s.Mux == nil {
 		panic("Server.Mux is nil")
 	}
 
+	h := new(handler)
+
+	var static unionfs.FS
+	if s.StaticFS != nil {
+		static = append(static, s.StaticFS)
+	}
+	static = append(static, staticFS)
+	h.static = hashfs.NewFS(static)
+
 	// Initialize internal routes.
-	s.Mux.Handle("GET /static/", hashfs.FileServer(StaticFS))
+	s.Mux.Handle("GET /static/", hashfs.FileServer(h.static))
 	s.Mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) { RespondJSON(w, version.Version()) })
 	Health(s.Mux)
 	if s.Debuggable {
@@ -99,13 +120,19 @@ func (s *Server) initHandler() http.Handler {
 	}
 
 	// Apply middleware.
-	var handler http.Handler = s.Mux
+	h.handler = s.Mux
 	mws := append(defaultMiddleware, s.Middleware...)
 	for _, middleware := range slices.Backward(mws) {
-		handler = middleware(handler)
+		h.handler = middleware(h.handler)
 	}
 
-	return handler
+	return h
+}
+
+// StaticHashName returns the cache-busting hashed name for a static file path.
+// If the path exists, its hashed name is returned. Otherwise, the original name is returned.
+func (s *Server) StaticHashName(name string) string {
+	return s.handler.Get(s.initHandler).static.HashName(name)
 }
 
 // ListenAndServe starts the HTTP server that can be stopped by canceling ctx.
@@ -166,6 +193,10 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 //go:embed static
 var staticFS embed.FS
 
-// StaticFS is an [embed.FS] that contains static resources served on /static/ path
-// prefix of [Server] HTTP handlers.
+// StaticFS is an [embed.FS] containing the base static resources (like default CSS)
+// served by the [Server] under the "/static/" path prefix.
+//
+// If you provide a custom [Server.StaticFS], you must use the [Server.StaticHashName]
+// method to generate correct hashed URLs for all static assets (both embedded and
+// custom).
 var StaticFS = hashfs.NewFS(staticFS)

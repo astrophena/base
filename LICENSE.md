@@ -12,7 +12,7 @@ OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
 TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
 THIS SOFTWARE.
 
-The modified txtar package is licensed under the BSD-style license:
+Some parts of this repository are licensed under the BSD-style license:
 
 ```
 Copyright (c) 2009 The Go Authors. All rights reserved.
