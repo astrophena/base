@@ -9,14 +9,7 @@
   <body>
     <main>
       <h1>{{ .StatusCode }} {{ .StatusText }}</h1>
-      {{ if eq .StatusCode 401 }}
-        <figure>
-          <img src="/{{ static "static/images/gtfo.jpg" }}" alt="GTFO"></img>
-          <figcaption>You are not allowed to access this page without authentication.</figcaption>
-        </figure>
-      {{ else }}
-        <p>That&apos;s all I know.</p>
-      {{ end }}
+      <p>That&apos;s all I know.</p>
     </main>
   </body>
 </html>
