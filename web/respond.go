@@ -7,6 +7,7 @@ package web
 
 import (
 	"bytes"
+	"context"
 	_ "embed"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,28 @@ import (
 
 	"go.astrophena.name/base/cli"
 )
+
+type contextKey string
+
+var trustedRequestKey = contextKey("trusted-request")
+
+type trustedRequest struct{}
+
+// IsTrustedRequest reports whether r is a trusted request.
+// A trusted request, when resulting in an error handled by [RespondError], will
+// have its underlying error message exposed to the client in the HTML response.
+func IsTrustedRequest(r *http.Request) bool {
+	_, ok := r.Context().Value(trustedRequestKey).(trustedRequest)
+	return ok
+}
+
+// TrustRequest marks r as a trusted request and returns a new request
+// with the trusted status embedded in its context.
+// This function should typically be used for requests originating from
+// service administrators or other privileged users.
+func TrustRequest(r *http.Request) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), trustedRequestKey, trustedRequest{}))
+}
 
 // StatusErr is a sentinel error type used to represent HTTP status code errors.
 type StatusErr int
@@ -85,11 +108,15 @@ var (
 // sets the response status code accordingly. Otherwise, it sets the response
 // status code to [http.StatusInternalServerError].
 //
+// If the request is marked as trusted (see [IsTrustedRequest] and [TrustRequest]),
+// the original error message will be included in the HTML response. This is
+// useful for debugging by service administrators.
+//
 // You can wrap any error with [fmt.Errorf] to create a [StatusErr] and set a
 // specific HTTP status code:
 //
 //	// This will set the status code to 404 (Not Found).
-//	web.RespondError(w, fmt.Errorf("resource %w", web.ErrNotFound))
+//	web.RespondError(w, r, fmt.Errorf("resource %w", web.ErrNotFound))
 func RespondError(w http.ResponseWriter, r *http.Request, err error) {
 	respondError(false, w, r, err)
 }
@@ -100,13 +127,14 @@ func RespondError(w http.ResponseWriter, r *http.Request, err error) {
 //
 // If the error is a [StatusErr] or wraps it, it extracts the HTTP status code
 // and sets the response status code accordingly. Otherwise, it sets the
-// response status code to [http.StatusInternalServerError].
+// response status code to [http.StatusInternalServerError]. The error message
+// is always included in the JSON response.
 //
 // You can wrap any error with [fmt.Errorf] to create a [StatusErr] and set a
 // specific HTTP status code:
 //
 //	// This will set the status code to 404 (Not Found).
-//	web.RespondJSONError(w, fmt.Errorf("resource %w", web.ErrNotFound)
+//	web.RespondJSONError(w, r, fmt.Errorf("resource %w", web.ErrNotFound))
 func RespondJSONError(w http.ResponseWriter, r *http.Request, err error) {
 	respondError(true, w, r, err)
 }
@@ -133,12 +161,20 @@ func respondError(json bool, w http.ResponseWriter, r *http.Request, err error) 
 	data := struct {
 		StatusCode int
 		StatusText string
+		IsTrusted  bool
+		Error      error // set if IsTrusted is true
 	}{
 		StatusCode: int(se),
 		StatusText: http.StatusText(int(se)),
+		IsTrusted:  IsTrustedRequest(r),
 	}
+	if data.IsTrusted {
+		data.Error = err
+	}
+
 	var buf bytes.Buffer
 	if err := errorTemplate.Execute(&buf, data); err != nil {
+		logf("Executing error template failed: %v", err)
 		// Fallback, if template execution fails.
 		fmt.Fprintf(w, "%d: %s", data.StatusCode, data.StatusText)
 		return
