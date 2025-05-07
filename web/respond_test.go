@@ -24,6 +24,7 @@ func TestRespondError(t *testing.T) {
 		err        error
 		wantStatus int
 		wantInBody string
+		trusted    bool
 		wantToLog  bool
 	}{
 		"404": {
@@ -50,6 +51,13 @@ func TestRespondError(t *testing.T) {
 			wantInBody: "500 Internal Server Error",
 			wantToLog:  true,
 		},
+		"500 (trusted)": {
+			err:        fmt.Errorf("%w: foo", ErrInternalServerError),
+			wantStatus: http.StatusInternalServerError,
+			wantInBody: "foo",
+			wantToLog:  true,
+			trusted:    true,
+		},
 	}
 
 	for name, tc := range cases {
@@ -63,6 +71,10 @@ func TestRespondError(t *testing.T) {
 			ctx := cli.WithEnv(context.Background(), env)
 
 			r := httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
+
+			if tc.trusted {
+				r = TrustRequest(r)
+			}
 
 			RespondError(w, r, tc.err)
 

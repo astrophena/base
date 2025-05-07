@@ -9,7 +9,11 @@
   <body>
     <main>
       <h1>{{ .StatusCode }} {{ .StatusText }}</h1>
-      <p>That&apos;s all I know.</p>
+      {{ if .IsTrusted }}
+        <pre><code>{{ .Error }}</code></pre>
+      {{ else }}
+        <p>That&apos;s all I know.</p>
+      {{ end }}
     </main>
   </body>
 </html>
