@@ -31,7 +31,7 @@ import (
 // Server is used to configure the HTTP server started by
 // [Server.ListenAndServe].
 //
-// All fields of Server can't be modified after [Server.ListenAndServe]
+// All fields of Server can't be modified after [Server.StaticHashName], [Server.ListenAndServe]
 // or [Server.ServeHTTP] is called for a first time.
 type Server struct {
 	// Mux is a http.ServeMux to serve.
@@ -193,7 +193,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 //go:embed static
 var staticFS embed.FS
 
-// StaticFS is an [embed.FS] containing the base static resources (like default CSS)
+// StaticFS is a [hashfs.FS] containing the base static resources (like default CSS)
 // served by the [Server] under the "/static/" path prefix.
 //
 // If you provide a custom [Server.StaticFS], you must use the [Server.StaticHashName]
