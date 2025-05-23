@@ -5,3 +5,9 @@ projects.
 notice and may gain or lose functionality at any time.
 
 See documentation at https://go.astrophena.name/base.
+
+Setting up Git pre-commit hook for development:
+
+```sh
+$ go tool pre-commit
+```

@@ -13,7 +13,7 @@ jobs:
       - name: 'Set up Go'
         uses: 'actions/setup-go@v5'
       - name: 'Test'
-        run: 'go test -race ./... -count=1'
+        run: 'go tool pre-commit'
       - name: 'Trigger vanity deploy'
         if: "github.ref == 'refs/heads/master'"
         env:

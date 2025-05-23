@@ -18,6 +18,9 @@ require (
 	honnef.co/go/tools v0.6.0 // indirect
 )
 
-tool go.astrophena.name/base/internal/devtools/addcopyright
+tool (
+	go.astrophena.name/base/internal/devtools/addcopyright
+	go.astrophena.name/base/internal/devtools/pre-commit
+)
 
 tool honnef.co/go/tools/cmd/staticcheck
