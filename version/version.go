@@ -41,7 +41,7 @@ func (i Info) String() string {
 	sb.WriteString(i.Name + " " + ver)
 	sb.WriteString("\n")
 
-	sb.WriteString("built with " + i.Go + ", " + i.OS + "/" + i.Arch + "\n")
+	sb.WriteString("built with Go " + i.Go + ", " + i.OS + "/" + i.Arch + "\n")
 	if i.BuiltAt != "" {
 		sb.WriteString("built at " + i.BuiltAt)
 	}
@@ -82,7 +82,7 @@ func loadInfo(buildinfo func() (*debug.BuildInfo, bool)) Info {
 		panic("build info is absent from binary; make sure you build it with module support")
 	}
 
-	i := &Info{Go: bi.GoVersion}
+	i := &Info{Go: strings.TrimPrefix(bi.GoVersion, "go")}
 
 	i.Version = bi.Main.Version
 	if i.Version == "(devel)" {
