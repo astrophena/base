@@ -96,7 +96,7 @@ func (lwg *LimitedWaitGroup) Done() {
 func (lwg *LimitedWaitGroup) Wait() { lwg.wg.Wait() }
 
 // Map is a generic version of [sync.Map].
-type Map[K, V comparable] struct{ m sync.Map }
+type Map[K comparable, V any] struct{ m sync.Map }
 
 // Load is [sync.Map.Load].
 func (m *Map[K, V]) Load(key K) (value V, ok bool) {
