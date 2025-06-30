@@ -18,18 +18,14 @@ func Health(mux *http.ServeMux) *HealthHandler {
 	if hh, ok := h.(*HealthHandler); ok && pat == "/health" {
 		return hh
 	}
-	ret := &HealthHandler{
-		checks: syncx.Protect(make(checksMap)),
-	}
+	ret := new(HealthHandler)
 	mux.Handle("/health", ret)
 	return ret
 }
 
 // HealthHandler is an HTTP handler that returns information about the health
 // status of the running service.
-type HealthHandler struct{ checks syncx.Protected[checksMap] }
-
-type checksMap = map[string]HealthFunc
+type HealthHandler struct{ checks syncx.Map[string, HealthFunc] }
 
 // HealthFunc is the health check function that reports the state of a
 // particular subsystem.
@@ -40,13 +36,11 @@ type HealthFunc func() (status string, ok bool)
 //
 // Health check function must be safe for concurrent use.
 func (h *HealthHandler) RegisterFunc(name string, f HealthFunc) {
-	h.checks.ReadAccess(func(checks checksMap) {
-		_, dup := checks[name]
-		if dup {
-			panic("health: health check function with this name already exists")
-		}
-		checks[name] = f
-	})
+	_, dup := h.checks.Load(name)
+	if dup {
+		panic("health: health check function with this name already exists")
+	}
+	h.checks.Store(name, f)
 }
 
 // HealthResponse represents a response of the /health endpoint.
@@ -68,14 +62,13 @@ func (h *HealthHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Checks: make(map[string]CheckResponse),
 	}
 
-	h.checks.ReadAccess(func(checks checksMap) {
-		for name, f := range checks {
-			status, ok := f()
-			if !ok {
-				hr.OK = false
-			}
-			hr.Checks[name] = CheckResponse{Status: status, OK: ok}
+	h.checks.Range(func(name string, f HealthFunc) bool {
+		status, ok := f()
+		if !ok {
+			hr.OK = false
 		}
+		hr.Checks[name] = CheckResponse{Status: status, OK: ok}
+		return true
 	})
 
 	w.Header().Set("Content-Type", "application/json")

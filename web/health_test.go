@@ -9,8 +9,6 @@ import (
 	"net/http"
 	"reflect"
 	"testing"
-
-	"go.astrophena.name/base/syncx"
 )
 
 func TestHealthHandler(t *testing.T) {
@@ -91,7 +89,9 @@ func TestHealthHandler(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			mux := http.NewServeMux()
 			h := Health(mux)
-			h.checks = syncx.Protect(tc.checks)
+			for name, f := range tc.checks {
+				h.RegisterFunc(name, f)
+			}
 
 			gotStr := send(t, mux, http.MethodGet, "/health", tc.wantStatus)
 			got := new(HealthResponse)
