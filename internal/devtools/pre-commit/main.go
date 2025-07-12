@@ -28,7 +28,7 @@ func main() {
 		log.Fatalf("Run gofmt on these files:\n\t%v", diff)
 	}
 
-	run(&w, "go", "tool", "staticcheck", "./...")
+	run(&w, "staticcheck", "./...")
 
 	if isCI {
 		run(&w, "go", "test", "-race", "./...")

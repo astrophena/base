@@ -57,7 +57,7 @@ func main() {
 			return err
 		}
 
-		if d.IsDir() || isExcluded(path) {
+		if d.IsDir() || isExcluded(path) || strings.Contains(path, "vendor") {
 			return nil
 		}
 		ext := filepath.Ext(path)
