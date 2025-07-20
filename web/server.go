@@ -26,8 +26,6 @@ import (
 	"github.com/benbjohnson/hashfs"
 )
 
-//go:generate curl --fail-with-body -s -o static/css/main.css https://astrophena.name/css/main.css
-
 // Server is used to configure the HTTP server started by
 // [Server.ListenAndServe].
 //
