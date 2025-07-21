@@ -47,6 +47,9 @@ var DefaultClient = &http.Client{
 // IgnoreResponse is a type to use with [Make] to skip JSON unmarshaling of the response body.
 type IgnoreResponse struct{}
 
+// Bytes is a type to use with [Make] to return the raw response body.
+type Bytes []byte
+
 // StatusError represents an error where an HTTP request returned
 // an unexpected status code.
 type StatusError struct {
@@ -140,15 +143,17 @@ func Make[Response any](ctx context.Context, p Params) (Response, error) {
 		}), p.Scrubber)
 	}
 
-	_, skipUnmarshal := any(resp).(IgnoreResponse)
-	if skipUnmarshal {
+	switch v := any(&resp).(type) {
+	case *IgnoreResponse:
 		return resp, nil
+	case *Bytes:
+		*v = b
+		return resp, nil
+	default:
+		if err := json.Unmarshal(b, &resp); err != nil {
+			return resp, scrubErr(err, p.Scrubber)
+		}
 	}
-
-	if err := json.Unmarshal(b, &resp); err != nil {
-		return resp, scrubErr(err, p.Scrubber)
-	}
-
 	return resp, nil
 }
 
