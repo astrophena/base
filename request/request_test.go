@@ -5,8 +5,10 @@
 package request_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -173,4 +175,64 @@ func TestMake(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMake_Bytes(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/ok":
+			w.Header().Set("Content-Type", "text/plain")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("raw response body"))
+		case "/fail":
+			http.Error(w, "something went wrong", http.StatusBadRequest)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer ts.Close()
+
+	t.Run("successful request returns raw bytes", func(t *testing.T) {
+		want := []byte("raw response body")
+
+		resp, err := request.Make[request.Bytes](context.Background(), request.Params{
+			Method: http.MethodGet,
+			URL:    ts.URL + "/ok",
+		})
+
+		if err != nil {
+			t.Fatalf("Make() returned an unexpected error: %v", err)
+		}
+
+		if !bytes.Equal(resp, want) {
+			t.Errorf("Make() got = %q, want %q", string(resp), string(want))
+		}
+	})
+
+	t.Run("failed request returns status error with body", func(t *testing.T) {
+		// http.Error adds a newline character to the body.
+		wantBody := []byte("something went wrong\n")
+
+		_, err := request.Make[request.Bytes](context.Background(), request.Params{
+			Method: http.MethodGet,
+			URL:    ts.URL + "/fail",
+		})
+
+		if err == nil {
+			t.Fatal("Make() expected an error, but got nil")
+		}
+
+		var statusErr *request.StatusError
+		if !errors.As(err, &statusErr) {
+			t.Fatalf("Make() error is not of type *request.StatusError: %T", err)
+		}
+
+		if statusErr.StatusCode != http.StatusBadRequest {
+			t.Errorf("StatusError.StatusCode got = %d, want %d", statusErr.StatusCode, http.StatusBadRequest)
+		}
+
+		if !bytes.Equal(statusErr.Body, wantBody) {
+			t.Errorf("StatusError.Body got = %q, want %q", string(statusErr.Body), string(wantBody))
+		}
+	})
 }

@@ -68,11 +68,12 @@ func (e *StatusError) Error() string {
 	return fmt.Sprintf("want %d, got %d: %s", e.WantedStatusCode, e.StatusCode, e.Body)
 }
 
-// Make sends an HTTP request and tries to parse the JSON response.
+// Make sends an HTTP request and tries to parse the response.
 //
 // The Response type parameter determines how the response body is handled:
 //
 //   - If Response is [IgnoreResponse], the response body is ignored and no parsing is attempted.
+//   - If Response is [Bytes], the raw response body is returned without any parsing.
 //   - Otherwise, the response body is expected to be JSON and is unmarshaled into a variable of type Response.
 //
 // It returns the parsed response of type Response and an error if the request fails or parsing fails.
