@@ -111,6 +111,13 @@ func TestMake(t *testing.T) {
 			},
 			want: `{"message": "success"}`,
 		},
+		"assumes GET on empty Method": {
+			params: request.Params{
+				URL: ts.URL + "/test",
+			},
+			wantErr:         true,
+			wantInErrorText: "want 200, got 400: invalid request",
+		},
 		"invalid request method": {
 			params: request.Params{
 				Method: http.MethodGet,

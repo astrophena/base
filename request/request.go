@@ -19,7 +19,8 @@ import (
 
 // Params defines the parameters needed for making an HTTP request.
 type Params struct {
-	// Method is the HTTP method (GET, POST, etc.) for the request.
+	// Method is the HTTP method (GET, POST, etc.) for the request. If not
+	// provided, GET will be used.
 	Method string
 	// URL is the target URL of the request.
 	URL string
@@ -105,7 +106,12 @@ func Make[Response any](ctx context.Context, p Params) (Response, error) {
 		br = bytes.NewReader(data)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, p.Method, p.URL, br)
+	method := http.MethodGet
+	if p.Method != "" {
+		method = p.Method
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, p.URL, br)
 	if err != nil {
 		return resp, scrubErr(err, p.Scrubber)
 	}
