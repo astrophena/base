@@ -2,7 +2,6 @@
 // Use of this source code is governed by the ISC
 // license that can be found in the LICENSE.md file.
 
-// Package web is a collection of functions and types for building web services.
 package web
 
 import (
