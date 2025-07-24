@@ -18,38 +18,27 @@ import (
 	"testing"
 
 	"go.astrophena.name/base/request"
+	"go.astrophena.name/base/web"
 )
 
 func ExampleMake() {
-	type response struct {
-		OK     bool `json:"ok"`
-		Checks map[string]struct {
-			Status string `json:"status"`
-			OK     bool   `json:"ok"`
-		} `json:"checks"`
-	}
-
-	// Checking health of Starlet.
-	health, err := request.Make[response](context.Background(), request.Params{
-		Method: http.MethodGet,
-		URL:    "https://bot.astrophena.name/health",
+	health, err := request.Make[web.HealthResponse](context.Background(), request.Params{
+		URL: "https://bot.astrophena.name/health",
 	})
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	if health.OK {
-		log.Println("Alive.")
+		log.Println("Healthy.")
 	} else {
-		log.Printf("Not alive: %+v", health)
+		log.Printf("Not healthy: %+v", health)
 	}
 }
 
 func ExampleMake_scrub() {
-	// Making request to GitHub API, scrubbing token out of error messages.
+	// Sending a request to the GitHub API. The token will be scrubbed from error messages.
 	user, err := request.Make[map[string]any](context.Background(), request.Params{
-		Method: http.MethodGet,
-		URL:    "https://api.github.com/user",
+		URL: "https://api.github.com/user",
 		Headers: map[string]string{
 			"Authorization": "Bearer " + os.Getenv("GITHUB_TOKEN"),
 		},
@@ -61,9 +50,18 @@ func ExampleMake_scrub() {
 	fmt.Println(user["login"])
 }
 
+func ExampleMake_bytes() {
+	b, err := request.Make[request.Bytes](context.Background(), request.Params{
+		URL: "https://astrophena.name",
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("Response body: %s", b)
+}
+
 func TestMake(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Check the request method and path.
 		if r.Method != http.MethodPost || r.URL.Path != "/test" {
 			http.Error(w, "invalid request", http.StatusBadRequest)
 			return
@@ -164,21 +162,21 @@ func TestMake(t *testing.T) {
 			resp, err := request.Make[json.RawMessage](context.Background(), tc.params)
 			if err != nil {
 				if !tc.wantErr {
-					t.Fatalf("Make() error = %v, wantErr %v", err, tc.wantErr)
+					t.Fatalf("want error %v, got %v", tc.wantErr, err)
 				}
 			}
 
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("Make() expected error, got none")
+					t.Fatal("expected error, got none")
 				}
 				if !strings.Contains(err.Error(), tc.wantInErrorText) {
-					t.Fatalf("Make(): got error %q, wanted in it %q", err.Error(), tc.wantInErrorText)
+					t.Fatalf("got error %q, wanted in it %q", err.Error(), tc.wantInErrorText)
 				}
 			}
 
 			if string(resp) != tc.want {
-				t.Errorf("Make() got = %v, want %v", resp, tc.want)
+				t.Errorf("got %q, want %q", resp, tc.want)
 			}
 		})
 	}
@@ -208,11 +206,11 @@ func TestMake_Bytes(t *testing.T) {
 		})
 
 		if err != nil {
-			t.Fatalf("Make() returned an unexpected error: %v", err)
+			t.Fatalf("returned an unexpected error: %v", err)
 		}
 
 		if !bytes.Equal(resp, want) {
-			t.Errorf("Make() got = %q, want %q", string(resp), string(want))
+			t.Errorf("got %q, want %q", string(resp), string(want))
 		}
 	})
 
@@ -226,20 +224,20 @@ func TestMake_Bytes(t *testing.T) {
 		})
 
 		if err == nil {
-			t.Fatal("Make() expected an error, but got nil")
+			t.Fatal("expected an error, but got nil")
 		}
 
 		var statusErr *request.StatusError
 		if !errors.As(err, &statusErr) {
-			t.Fatalf("Make() error is not of type *request.StatusError: %T", err)
+			t.Fatalf("error is not of type *request.StatusError: %T", err)
 		}
 
 		if statusErr.StatusCode != http.StatusBadRequest {
-			t.Errorf("StatusError.StatusCode got = %d, want %d", statusErr.StatusCode, http.StatusBadRequest)
+			t.Errorf("StatusError.StatusCode: got %d, want %d", statusErr.StatusCode, http.StatusBadRequest)
 		}
 
 		if !bytes.Equal(statusErr.Body, wantBody) {
-			t.Errorf("StatusError.Body got = %q, want %q", string(statusErr.Body), string(wantBody))
+			t.Errorf("StatusError.Body: got %q, want %q", string(statusErr.Body), string(wantBody))
 		}
 	})
 }
