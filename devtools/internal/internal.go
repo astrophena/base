@@ -2,8 +2,8 @@
 // Use of this source code is governed by the ISC
 // license that can be found in the LICENSE.md file.
 
-// Package devtools contains common functionality for development tools.
-package devtools
+// Package internal contains common functionality for development tools.
+package internal
 
 import (
 	"os"

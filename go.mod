@@ -12,8 +12,8 @@ require (
 )
 
 tool (
-	go.astrophena.name/base/internal/devtools/addcopyright
-	go.astrophena.name/base/internal/devtools/pre-commit
+	go.astrophena.name/base/devtools/addcopyright
+	go.astrophena.name/base/devtools/pre-commit
 )
 
 tool honnef.co/go/tools/cmd/staticcheck
