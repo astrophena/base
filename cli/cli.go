@@ -2,8 +2,8 @@
 // Use of this source code is governed by the ISC
 // license that can be found in the LICENSE.md file.
 
-// Package cli provides utilities for building simple command-line applications
-// that have no subcommands.
+// Package cli provides helpers for creating simple, single-command
+// command-line applications.
 package cli
 
 import (
@@ -25,9 +25,8 @@ import (
 	"go.astrophena.name/base/version"
 )
 
-// Main is a helper function that handles common startup tasks for command-line
-// applications. It sets up signal handling for interrupts, runs the application,
-// and prints errors to stderr.
+// Main runs an application, handling signal-based cancellation and printing errors
+// to stderr. It is intended to be called directly from a program's main function.
 func Main(app App) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
@@ -57,40 +56,32 @@ func isPrintableError(err error) bool {
 	return !errors.As(err, &ue)
 }
 
-// ErrExitVersion is an error indicating the application should exit after
-// showing version.
+// ErrExitVersion signals that the application should exit successfully after
+// printing the version information.
 var ErrExitVersion = &unprintableError{errors.New("version flag exit")}
 
-// ErrInvalidArgs indicates that the command-line arguments provided to the
-// application are invalid or insufficient.
-//
-// This error should be wrapped with fmt.Errorf to provide a specific,
-// user-friendly message explaining the nature of the invalid arguments.
-//
-// For example:
-//
-//	return fmt.Errorf("%w: missing required argument 'filename'", cli.ErrInvalidArgs)
+// ErrInvalidArgs indicates that the user provided invalid command-line
+// arguments. It should be wrapped with more specific context about the error.
 var ErrInvalidArgs = errors.New("invalid arguments")
 
-// App represents a command-line application.
+// App represents a runnable command-line application.
 type App interface {
-	// Run runs the application.
+	// Run executes the application's primary logic.
 	Run(context.Context) error
 }
 
-// HasFlags represents a command-line application that has flags.
+// HasFlags is an App that can define its own command-line flags.
 type HasFlags interface {
 	App
 
-	// Flags adds flags to the flag set.
+	// Flags registers flags with the given FlagSet.
 	Flags(*flag.FlagSet)
 }
 
-// AppFunc is a function type that implements the [App] interface.
-// AppFunc doesn't have it's own flags.
+// AppFunc is an adapter to allow the use of ordinary functions as an App.
 type AppFunc func(context.Context) error
 
-// Run calls f(ctx).
+// Run calls the underlying function.
 func (f AppFunc) Run(ctx context.Context) error {
 	return f(ctx)
 }
@@ -99,8 +90,8 @@ type ctxKey int
 
 var envKey ctxKey
 
-// GetEnv returns the [Env] value stored in ctx, returning [OSEnv] in case it
-// doesn't exist.
+// GetEnv retrieves the application's environment from a context.
+// If the context has no environment, it returns one based on the current OS.
 func GetEnv(ctx context.Context) *Env {
 	e, ok := ctx.Value(envKey).(*Env)
 	if !ok {
@@ -109,14 +100,13 @@ func GetEnv(ctx context.Context) *Env {
 	return e
 }
 
-// WithEnv returns a new [context.Context] that carries [Env].
+// WithEnv returns a new context that carries the provided application environment.
 func WithEnv(ctx context.Context, e *Env) context.Context {
 	return context.WithValue(ctx, envKey, e)
 }
 
-// Env represents the application environment.
-//
-// You can access it by using [GetEnv] function.
+// Env encapsulates the application's environment, including arguments,
+// standard I/O streams, and environment variables.
 type Env struct {
 	Args   []string
 	Getenv func(string) string
@@ -127,14 +117,14 @@ type Env struct {
 	logf syncx.Lazy[logger.Logf]
 }
 
-// Logf writes the formatted message to standard error of this environment.
+// Logf prints a formatted message to the environment's standard error.
 func (e *Env) Logf(format string, args ...any) {
 	e.logf.Get(func() logger.Logf {
 		return log.New(e.Stderr, "", 0).Printf
 	})(format, args...)
 }
 
-// OSEnv returns the current operating system environment.
+// OSEnv creates an Env based on the current operating system environment.
 func OSEnv() *Env {
 	return &Env{
 		Args:   os.Args[1:],
@@ -145,7 +135,8 @@ func OSEnv() *Env {
 	}
 }
 
-// Run handles the command-line application startup.
+// Run executes an application. It parses flags, handles standard flags like
+// -version and -cpuprofile, and then runs the app.
 func Run(ctx context.Context, app App) error {
 	name := version.CmdName()
 
@@ -224,33 +215,11 @@ var (
 	doc    syncx.Lazy[string]
 )
 
-// SetDocComment stores the provided byte slice as the source for the
-// application's documentation comment.
+// SetDocComment sets the main documentation for the application, which is
+// displayed when a user passes the -help flag. It is intended to be used with
+// Go's //go:embed directive.
 //
-// The parsing process assumes that the documentation comment is enclosed
-// within a single /* ... */ block and extracts the content line by line.
-// Any other multi-line comments within the embedded file will be ignored.
-//
-// The parsed documentation will be included in the help message.
-//
-// In application's doc.go:
-//
-//	/*
-//	Amazinator does amazing things...
-//
-//	# Usage
-//
-//		$ amazinator [flags...]
-//
-//	Amazinator amazes amazinations by amazing your amazinators.
-//	*/
-//	package main
-//
-//	import (
-//		_ "embed"
-//
-//		"go.astrophena.name/base/cli"
-//	)
+// Example:
 //
 //	//go:embed doc.go
 //	var doc []byte

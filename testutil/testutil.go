@@ -2,142 +2,90 @@
 // Use of this source code is governed by the ISC
 // license that can be found in the LICENSE.md file.
 
-// Package testutil contains common testing helpers.
+// Package testutil provides helpers for common testing scenarios.
 package testutil
 
 import (
+	"bytes"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"strings"
 	"testing"
 
 	"go.astrophena.name/base/txtar"
-
-	"github.com/google/go-cmp/cmp"
 )
 
-// UnmarshalJSON parses the JSON data into v, failing the test in case of failure.
-func UnmarshalJSON[V any](t *testing.T, b []byte) V {
-	t.Helper()
-	var v V
-	if err := json.Unmarshal(b, &v); err != nil {
-		t.Fatal(err)
-	}
-	return v
-}
-
-// AssertContains fails the test if v is not present in s.
-func AssertContains[S ~[]V, V comparable](t *testing.T, s S, v V) {
-	t.Helper()
-	if !slices.Contains(s, v) {
-		t.Fatalf("%v is not present in %v", v, s)
-	}
-}
-
-// AssertNotContains fails the test if v is present in s.
-func AssertNotContains[S ~[]V, V comparable](t *testing.T, s S, v V) {
-	t.Helper()
-	if slices.Contains(s, v) {
-		t.Fatalf("%v is present in %v", v, s)
-	}
-}
-
-// AssertEqual compares two values and if they differ, fails the test and
-// prints the difference between them.
+// AssertEqual fails the test if got is not deeply equal to want.
+// It prints both values for easy comparison upon failure.
 func AssertEqual(t *testing.T, got, want any) {
 	t.Helper()
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Fatalf("(-got +want):\n%s", diff)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("values are not equal:\ngot:  %#v\nwant: %#v", got, want)
 	}
 }
 
-// AssertErrorType asserts that the got error is of the same type as the want
-// error. It does not compare error messages or values, only the types.
-func AssertErrorType(t *testing.T, got, want error) {
-	t.Helper()
-	gotErr := reflect.Zero(reflect.TypeOf(want)).Interface()
-	fail := func() {
-		t.Errorf("want error type %T, got %T", want, got)
-	}
-	if !errors.As(got, &gotErr) {
-		fail()
-	}
-	if gotErr != nil && reflect.TypeOf(gotErr) != reflect.TypeOf(want) {
-		fail()
-	}
-}
-
-// Run runs a subtest for each file matching the provided glob pattern.
+// Run runs a subtest for each file that matches the provided glob pattern.
+// The subtest name is the file's path relative to its directory.
 func Run(t *testing.T, glob string, f func(t *testing.T, match string)) {
+	t.Helper()
 	matches, err := filepath.Glob(glob)
 	if err != nil {
 		t.Fatalf("filepath.Glob(%q): %v", glob, err)
 	}
-	if len(matches) == 0 {
-		return
-	}
 
 	for _, match := range matches {
-		name, err := filepath.Rel(filepath.Dir(match), match)
-		if err != nil {
-			t.Fatalf("filepath.Rel(%q, %q): %v", filepath.Dir(match), match, err)
-		}
-		name = strings.TrimSuffix(name, filepath.Ext(match))
-
+		name := strings.TrimSuffix(filepath.Base(match), filepath.Ext(match))
 		t.Run(name, func(t *testing.T) {
 			f(t, match)
 		})
 	}
 }
 
-// RunGolden runs a subtest for each file matching the provided glob pattern,
-// computing the result and comparing it with a golden file, or updating a
-// golden file if update is true.
+// RunGolden runs a test for each file matching a glob pattern and compares
+// the result of a function f with the contents of a corresponding ".golden"
+// file.
 //
-// f is a function that should compute the result and return it as a byte slice.
+// If update is true, the golden file is updated with the new result instead
+// of being compared.
 func RunGolden(t *testing.T, glob string, f func(t *testing.T, match string) []byte, update bool) {
+	t.Helper()
 	Run(t, glob, func(t *testing.T, match string) {
 		got := f(t, match)
+		goldenFile := strings.TrimSuffix(match, filepath.Ext(match)) + ".golden"
 
-		golden := strings.TrimSuffix(match, filepath.Ext(match)) + ".golden"
 		if update {
-			if err := os.WriteFile(golden, got, 0o644); err != nil {
-				t.Fatalf("unable to write golden file %q: %v", golden, err)
+			if err := os.WriteFile(goldenFile, got, 0o644); err != nil {
+				t.Fatalf("failed to write golden file %q: %v", goldenFile, err)
 			}
 			return
 		}
 
-		want, err := os.ReadFile(golden)
+		want, err := os.ReadFile(goldenFile)
 		if err != nil {
-			t.Fatalf("unable to read golden file %q: %v", golden, err)
+			t.Fatalf("failed to read golden file %q: %v", goldenFile, err)
 		}
 
-		AssertEqual(t, got, want)
+		if !bytes.Equal(got, want) {
+			t.Fatalf("golden file mismatch. got:\n%s", got)
+		}
 	})
 }
 
-// ExtractTxtar extracts a txtar archive to dir.
-func ExtractTxtar(t *testing.T, ar *txtar.Archive, dir string) {
-	t.Helper()
-	if err := txtar.Extract(ar, dir); err != nil {
-		t.Fatal(err)
+// MockHTTPClient returns an [http.Client] that directs all requests to the
+// provided [http.Handler], allowing to test HTTP clients without making
+// real network requests.
+func MockHTTPClient(h http.Handler) *http.Client {
+	return &http.Client{
+		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			return w.Result(), nil
+		}),
 	}
-}
-
-// BuildTxtar constructs a txtar archive from contents of dir.
-func BuildTxtar(t *testing.T, dir string) []byte {
-	t.Helper()
-	ar, err := txtar.FromDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return txtar.Format(ar)
 }
 
 type roundTripFunc func(r *http.Request) (*http.Response, error)
@@ -146,14 +94,31 @@ func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
 }
 
-// MockHTTPClient returns a [http.Client] that serves all requests made through
-// it from handler h.
-func MockHTTPClient(h http.Handler) *http.Client {
-	return &http.Client{
-		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-			w := httptest.NewRecorder()
-			h.ServeHTTP(w, r)
-			return w.Result(), nil
-		}),
+// UnmarshalJSON parses a JSON byte slice into a value of type V, failing
+// the test if an error occurs.
+func UnmarshalJSON[V any](t *testing.T, b []byte) V {
+	t.Helper()
+	var v V
+	if err := json.Unmarshal(b, &v); err != nil {
+		t.Fatalf("failed to unmarshal JSON: %v", err)
+	}
+	return v
+}
+
+// BuildTxtar creates a txtar-formatted byte slice from the contents of a directory.
+func BuildTxtar(t *testing.T, dir string) []byte {
+	t.Helper()
+	ar, err := txtar.FromDir(dir)
+	if err != nil {
+		t.Fatalf("failed to build txtar from dir %q: %v", dir, err)
+	}
+	return txtar.Format(ar)
+}
+
+// ExtractTxtar extracts a txtar archive to a specified directory.
+func ExtractTxtar(t *testing.T, ar *txtar.Archive, dir string) {
+	t.Helper()
+	if err := txtar.Extract(ar, dir); err != nil {
+		t.Fatalf("failed to extract txtar to dir %q: %v", dir, err)
 	}
 }
