@@ -18,11 +18,11 @@ import (
 	"time"
 
 	"go.astrophena.name/base/cli"
-	"go.astrophena.name/base/internal/hashfs"
-	"go.astrophena.name/base/internal/unionfs"
 	"go.astrophena.name/base/logger"
 	"go.astrophena.name/base/syncx"
 	"go.astrophena.name/base/version"
+	"go.astrophena.name/base/web/internal/hashfs"
+	"go.astrophena.name/base/web/internal/unionfs"
 )
 
 // Server is used to configure the HTTP server started by

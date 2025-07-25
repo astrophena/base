@@ -2,26 +2,42 @@
 // Use of this source code is governed by the ISC
 // license that can be found in the LICENSE.md file.
 
+// Pre-commit implements a Git pre-commit hook to run tests before each commit.
 package main
 
 import (
 	"bytes"
+	"errors"
+	"io/fs"
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 
-	"go.astrophena.name/base/internal/devtools"
+	"go.astrophena.name/base/devtools/internal"
 )
+
+const hookShellScript = `#!/bin/sh
+echo "==> Running pre-commit check..."
+go tool pre-commit
+`
 
 func main() {
 	log.SetFlags(0)
-	devtools.EnsureRoot()
+	internal.EnsureRoot()
 
 	isCI := os.Getenv("CI") == "true"
 
-	var w bytes.Buffer
+	if !isCI {
+		hookPath := filepath.Join(".git", "hooks", "pre-commit")
+		if _, err := os.Stat(hookPath); errors.Is(err, fs.ErrNotExist) {
+			if err := os.WriteFile(hookPath, []byte(hookShellScript), 0o755); err != nil {
+				log.Fatal(err)
+			}
+		}
+	}
 
-	run(&w, "git", "config", "core.hooksPath", "internal/devtools/githooks")
+	var w bytes.Buffer
 
 	run(&w, "gofmt", "-d", ".")
 	if diff := w.String(); diff != "" {

@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"go.astrophena.name/base/internal/devtools"
+	"go.astrophena.name/base/devtools/internal"
 )
 
 var templates = map[string]string{
@@ -52,7 +52,7 @@ func isExcluded(path string) bool {
 }
 
 func main() {
-	devtools.EnsureRoot()
+	internal.EnsureRoot()
 
 	if err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -83,7 +83,8 @@ func main() {
 		}
 
 		if bytes.HasPrefix(content, []byte(header)) {
-			return nil // Already has a copyright header
+			// Already has a copyright header.
+			return nil
 		}
 
 		year := info.ModTime().Year()

@@ -8,7 +8,7 @@ import (
 	"os"
 	"testing"
 
-	"go.astrophena.name/base/internal/hashfs"
+	"go.astrophena.name/base/web/internal/hashfs"
 )
 
 //go:embed testdata
