@@ -30,6 +30,8 @@ var headers = map[string]string{
 }
 
 var exclusions = []string{
+	"internal/hashfs/hashfs.go",
+	"internal/hashfs/hashfs_test.go",
 	// Based on Go's telemetry code.
 	"internal/unionfs/unionfs.go",
 	"internal/unionfs/unionfs_test.go",

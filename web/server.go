@@ -18,12 +18,11 @@ import (
 	"time"
 
 	"go.astrophena.name/base/cli"
+	"go.astrophena.name/base/internal/hashfs"
 	"go.astrophena.name/base/internal/unionfs"
 	"go.astrophena.name/base/logger"
 	"go.astrophena.name/base/syncx"
 	"go.astrophena.name/base/version"
-
-	"github.com/benbjohnson/hashfs"
 )
 
 // Server is used to configure the HTTP server started by
@@ -194,7 +193,7 @@ var staticFS embed.FS
 // StaticFS is a [hashfs.FS] containing the base static resources (like default CSS)
 // served by the [Server] under the "/static/" path prefix.
 //
-// If you provide a custom [Server.StaticFS], you must use the [Server.StaticHashName]
+// If you provide a custom Server.StaticFS, you must use the [Server.StaticHashName]
 // method to generate correct hashed URLs for all static assets (both embedded and
 // custom).
 var StaticFS = hashfs.NewFS(staticFS)
