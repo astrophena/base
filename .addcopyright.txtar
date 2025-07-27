@@ -1,0 +1,17 @@
+-- exclusions.json --
+[
+  "internal/hashfs/hashfs.go",
+  "internal/hashfs/hashfs_test.go",
+  "internal/unionfs/unionfs.go",
+  "internal/unionfs/unionfs_test.go",
+  "txtar/txtar.go",
+  "web/debug.go",
+  "web/debug_test.go"
+]
+-- template.go --
+// © %d Ilya Mateyko. All rights reserved.
+// Use of this source code is governed by the ISC
+// license that can be found in the LICENSE.md file.
+
+-- header.go --
+// ©
