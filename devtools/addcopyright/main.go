@@ -41,22 +41,22 @@ func parseConfig() (*config, error) {
 		templates: make(map[string]string),
 	}
 
-	ar, err := txtar.ParseFile(".addcopyright.txtar")
+	ar, err := txtar.ParseFile(".devtools.txtar")
 	if err != nil {
 		return nil, err
 	}
 
 	for _, f := range ar.Files {
-		if f.Name == "exclusions.json" {
+		if f.Name == "copyright/exclusions.json" {
 			if err := json.Unmarshal(f.Data, &cfg.exclusions); err != nil {
 				return nil, err
 			}
 		}
 		ext := filepath.Ext(f.Name)
-		if strings.HasPrefix(f.Name, "template") {
+		if strings.HasPrefix(f.Name, "copyright/template") {
 			cfg.templates[ext] = string(f.Data)
 		}
-		if strings.HasPrefix(f.Name, "header") {
+		if strings.HasPrefix(f.Name, "copyright/header") {
 			cfg.headers[ext] = strings.TrimSuffix(string(f.Data), "\n")
 		}
 	}
@@ -67,11 +67,13 @@ func parseConfig() (*config, error) {
 func main() { cli.Main(new(app)) }
 
 type app struct {
-	dry bool
+	dry   bool
+	check bool
 }
 
 func (a *app) Flags(fs *flag.FlagSet) {
 	fs.BoolVar(&a.dry, "dry", false, "Print the files that would have a copyright header added, without making changes.")
+	fs.BoolVar(&a.check, "check", false, "Check if files have copyright headers.")
 }
 
 func (a *app) Run(ctx context.Context) error {
@@ -84,7 +86,9 @@ func (a *app) Run(ctx context.Context) error {
 		return err
 	}
 
-	return filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
+	var foundMissing bool
+
+	walkErr := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -102,32 +106,55 @@ func (a *app) Run(ctx context.Context) error {
 			return nil
 		}
 
-		info, err := d.Info()
-		if err != nil {
-			return err
-		}
-
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return err
 		}
 
-		if bytes.HasPrefix(content, []byte(header)) {
-			// Already has a copyright header.
+		hasHeader := bytes.HasPrefix(content, []byte(header))
+
+		// If in check mode, we just check and record if a header is missing.
+		if a.check {
+			if !hasHeader {
+				env.Logf("File is missing copyright header: %s", path)
+				foundMissing = true
+			}
 			return nil
 		}
 
+		// If not in check mode and the header is already present, skip.
+		if hasHeader {
+			return nil
+		}
+
+		// If not in check mode and the header is missing, add it.
+		info, err := d.Info()
+		if err != nil {
+			return err
+		}
 		year := info.ModTime().Year()
 		hdr := fmt.Sprintf(tmpl, year)
-
-		var buf bytes.Buffer
-		buf.WriteString(hdr)
-		buf.Write(content)
 
 		if a.dry {
 			env.Logf("Would add copyright header to file %s:\n%s", path, hdr)
 			return nil
 		}
+
+		var buf bytes.Buffer
+		buf.WriteString(hdr)
+		buf.Write(content)
 		return os.WriteFile(path, buf.Bytes(), 0o644)
 	})
+
+	if walkErr != nil {
+		return walkErr
+	}
+
+	// If in check mode and we found files with missing headers, return an error
+	// to produce a non-zero exit code.
+	if a.check && foundMissing {
+		return fmt.Errorf("found one or more files missing copyright headers")
+	}
+
+	return nil
 }
