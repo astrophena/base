@@ -14,7 +14,6 @@ directory. This file is a txtar archive and can contain a pre-commit.json file.
 The pre-commit.json file should contain a JSON array of check objects, each with
 the following fields:
 
-  - name: A string that describes the check (e.g., "Run tests").
   - run: A string array where the first element is the command to run and the
     rest are its arguments (e.g., ["go", "test", "./..."]).
   - skip_in_ci: A boolean that, if true, causes the check to be skipped when
