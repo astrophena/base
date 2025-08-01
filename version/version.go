@@ -38,7 +38,11 @@ func (i Info) String() string {
 			ver += "-dirty"
 		}
 	}
-	sb.WriteString(i.Name + " " + ver)
+	if i.Version != "" {
+		sb.WriteString(i.Name + " " + ver)
+	} else {
+		sb.WriteString(i.Name)
+	}
 	sb.WriteString("\n")
 
 	sb.WriteString("built with Go " + i.Go + ", " + i.OS + "/" + i.Arch + "\n")
@@ -125,12 +129,9 @@ func loadInfo(buildinfo func() (*debug.BuildInfo, bool)) Info {
 		}
 	}
 
-	// If built without VCS info, fallback to "unknown".
+	// If built without VCS info, fallback to an empty version.
 	if i.Version == "git" && i.Commit == "" && i.BuiltAt == "" {
-		i.Version = "unknown"
-		if testing.Testing() {
-			i.Version = ""
-		}
+		i.Version = ""
 	}
 
 	return *i
