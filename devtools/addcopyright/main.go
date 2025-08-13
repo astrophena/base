@@ -10,8 +10,8 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -19,6 +19,15 @@ import (
 	"go.astrophena.name/base/devtools/internal"
 	"go.astrophena.name/base/txtar"
 )
+
+func listFiles(ctx context.Context) ([]string, error) {
+	cmd := exec.CommandContext(ctx, "git", "ls-files", "-z", "--cached", "--others", "--exclude-standard")
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	return strings.Split(string(bytes.TrimRight(out, "\x00")), "\x00"), nil
+}
 
 type config struct {
 	exclusions []string
@@ -86,24 +95,25 @@ func (a *app) Run(ctx context.Context) error {
 		return err
 	}
 
+	files, err := listFiles(ctx)
+	if err != nil {
+		return err
+	}
+
 	var foundMissing bool
 
-	walkErr := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if d.IsDir() || cfg.isExcluded(path) {
-			return nil
+	for _, path := range files {
+		if cfg.isExcluded(path) {
+			continue
 		}
 		ext := filepath.Ext(path)
 		tmpl, ok := cfg.templates[ext]
 		if !ok {
-			return nil
+			continue
 		}
 		header, ok := cfg.headers[ext]
 		if !ok {
-			return nil
+			continue
 		}
 
 		content, err := os.ReadFile(path)
@@ -119,16 +129,16 @@ func (a *app) Run(ctx context.Context) error {
 				env.Logf("File is missing copyright header: %s", path)
 				foundMissing = true
 			}
-			return nil
+			continue
 		}
 
 		// If not in check mode and the header is already present, skip.
 		if hasHeader {
-			return nil
+			continue
 		}
 
 		// If not in check mode and the header is missing, add it.
-		info, err := d.Info()
+		info, err := os.Stat(path)
 		if err != nil {
 			return err
 		}
@@ -137,17 +147,15 @@ func (a *app) Run(ctx context.Context) error {
 
 		if a.dry {
 			env.Logf("Would add copyright header to file %s:\n%s", path, hdr)
-			return nil
+			continue
 		}
 
 		var buf bytes.Buffer
 		buf.WriteString(hdr)
 		buf.Write(content)
-		return os.WriteFile(path, buf.Bytes(), 0o644)
-	})
-
-	if walkErr != nil {
-		return walkErr
+		if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+			return err
+		}
 	}
 
 	// If in check mode and we found files with missing headers, return an error
