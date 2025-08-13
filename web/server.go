@@ -48,12 +48,15 @@ type Server struct {
 	// StaticFS and served under the "/static/" path prefix.
 	// Files in this FS take precedence over the embedded ones if names conflict.
 	StaticFS fs.FS
+	// CrossOriginProtection configures CSRF protection. Defaults are used if nil.
+	CrossOriginProtection *http.CrossOriginProtection
 
 	handler syncx.Lazy[*handler]
 }
 
 type handler struct {
 	handler http.Handler
+	csrf    *http.CrossOriginProtection
 	static  *hashfs.FS
 }
 
@@ -116,8 +119,17 @@ func (s *Server) initHandler() *handler {
 		Debugger(s.Mux)
 	}
 
+	if s.CrossOriginProtection != nil {
+		h.csrf = s.CrossOriginProtection
+	} else {
+		h.csrf = http.NewCrossOriginProtection()
+	}
+	h.csrf.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		RespondError(w, r, fmt.Errorf("%w: CSRF protection failed", ErrForbidden))
+	}))
+
 	// Apply middleware.
-	h.handler = s.Mux
+	h.handler = h.csrf.Handler(s.Mux)
 	mws := append(defaultMiddleware, s.Middleware...)
 	for _, middleware := range slices.Backward(mws) {
 		h.handler = middleware(h.handler)
