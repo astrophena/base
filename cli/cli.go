@@ -244,7 +244,7 @@ func parseDocComment() string {
 			break
 		}
 		if inComment {
-			doc += s.Text() + "\n"
+			doc += line + "\n"
 		}
 	}
 	if err := s.Err(); err != nil {
