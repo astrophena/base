@@ -203,7 +203,7 @@ func delCookie(w http.ResponseWriter, key string) {
 
 func authDataToIdentity(data string) (*Identity, error) {
 	dataMap := make(map[string]string)
-	for _, line := range strings.Split(data, "\n") {
+	for line := range strings.SplitSeq(data, "\n") {
 		parts := strings.SplitN(line, "=", 2)
 		if len(parts) == 2 {
 			dataMap[parts[0]] = parts[1]

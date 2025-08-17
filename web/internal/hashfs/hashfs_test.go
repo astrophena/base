@@ -184,7 +184,7 @@ func TestFileServer(t *testing.T) {
 		h := hashfs.FileServer(fsys)
 		hash := "\"b633a587c652d02386c4f16f8c6f6aab7352d97f16367c3c40576214372dd628\""
 
-		for i := 0; i < 2; i++ {
+		for range 2 {
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, r)
 

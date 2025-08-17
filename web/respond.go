@@ -81,10 +81,10 @@ func respondJSON(w http.ResponseWriter, response any, wroteStatus bool) {
 		if !wroteStatus {
 			w.WriteHeader(http.StatusInternalServerError)
 		}
-		w.Write([]byte(fmt.Sprintf(`{
+		w.Write(fmt.Appendf(nil, `{
   "status": "error",
   "error": "JSON marshal error: %s"
-}`, escapeForJSON(err.Error()))))
+}`, escapeForJSON(err.Error())))
 		return
 	}
 	w.Write(b)
@@ -150,7 +150,7 @@ func respondError(json bool, w http.ResponseWriter, r *http.Request, err error) 
 	}
 	w.WriteHeader(int(se))
 	if se == ErrInternalServerError {
-		logf("Error %d (%s): %v", se, http.StatusText(int(se)), err)
+		logf("%s: %s %s -> %v", http.StatusText(int(se)), r.Method, r.URL.Path, err)
 	}
 	if json {
 		respondJSON(w, &errorResponse{Status: "error", Error: err.Error()}, true)
@@ -173,7 +173,7 @@ func respondError(json bool, w http.ResponseWriter, r *http.Request, err error) 
 
 	var buf bytes.Buffer
 	if err := errorTemplate.Execute(&buf, data); err != nil {
-		logf("Executing error template failed: %v", err)
+		logf("web.RespondError: executing error template failed: %v", err)
 		// Fallback, if template execution fails.
 		fmt.Fprintf(w, "%d: %s", data.StatusCode, data.StatusText)
 		return
