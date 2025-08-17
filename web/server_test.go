@@ -82,13 +82,11 @@ func TestServerListenAndServe(t *testing.T) {
 		Ready:      readyFunc,
 	}
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		if err := s.ListenAndServe(cli.WithEnv(ctx, env)); err != nil {
 			errCh <- err
 		}
-	}()
+	})
 
 	// Wait until the server is ready.
 	select {
