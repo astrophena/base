@@ -50,7 +50,7 @@ func parseConfig() (*config, error) {
 		templates: make(map[string]string),
 	}
 
-	ar, err := txtar.ParseFile(".devtools.txtar")
+	ar, err := txtar.ParseFile(filepath.Join(".devtools", "config.txtar"))
 	if err != nil {
 		return nil, err
 	}

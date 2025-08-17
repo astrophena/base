@@ -32,7 +32,7 @@ type check struct {
 }
 
 func loadChecks() ([]check, error) {
-	ar, err := txtar.ParseFile(".devtools.txtar")
+	ar, err := txtar.ParseFile(filepath.Join(".devtools", "config.txtar"))
 	if err != nil {
 		return nil, err
 	}
