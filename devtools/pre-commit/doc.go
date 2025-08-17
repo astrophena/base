@@ -9,7 +9,7 @@ On its first run in a non-CI environment, it automatically creates the
 .git/hooks/pre-commit script. This script simply calls 'go tool pre-commit'
 again, ensuring that the checks are run on every subsequent commit.
 
-Checks are configured through a .devtools.txtar file in the project's root
+Checks are configured through a .devtools/config.txtar file in the project's root
 directory. This file is a txtar archive and can contain a pre-commit.json file.
 The pre-commit.json file should contain a JSON array of check objects, each with
 the following fields:
