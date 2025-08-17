@@ -161,7 +161,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	env.Logf("Listening on %s://%s...", scheme, host)
 
 	httpSrv := &http.Server{
-		ErrorLog: log.New(logger.Logf(env.Logf), "", 0),
+		ErrorLog: log.New(errLogf(env.Logf), "", 0),
 		Handler:  s,
 		BaseContext: func(_ net.Listener) context.Context {
 			return cli.WithEnv(context.Background(), cli.GetEnv(ctx))
@@ -197,6 +197,12 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func errLogf(base logger.Logf) logger.Logf {
+	return func(format string, args ...any) {
+		base("HTTP server error: "+format, args...)
+	}
 }
 
 //go:embed static
