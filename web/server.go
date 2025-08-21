@@ -14,7 +14,6 @@ import (
 	"net"
 	"net/http"
 	"slices"
-	"strings"
 	"time"
 
 	"go.astrophena.name/base/cli"
@@ -50,6 +49,9 @@ type Server struct {
 	StaticFS fs.FS
 	// CrossOriginProtection configures CSRF protection. Defaults are used if nil.
 	CrossOriginProtection *http.CrossOriginProtection
+	// CSP is a multiplexer for Content Security Policies.
+	// If nil, a default restrictive policy is used.
+	CSP *CSPMux
 
 	handler syncx.Lazy[*handler]
 }
@@ -65,17 +67,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.handler.Get(s.initHandler).handler.ServeHTTP(w, r)
 }
 
-// The Content-Security-Policy header.
+// The default Content-Security-Policy.
 // Based on https://github.com/tailscale/tailscale/blob/4ad3f01225745294474f1ae0de33e5a86824a744/safeweb/http.go.
-var cspHeader = strings.Join([]string{
-	`default-src 'self'`,      // origin is the only valid source for all content types
-	`script-src 'self'`,       // disallow inline javascript
-	`frame-ancestors 'none'`,  // disallow framing of the page
-	`form-action 'self'`,      // disallow form submissions to other origins
-	`base-uri 'self'`,         // disallow base URIs from other origins
-	`block-all-mixed-content`, // disallow mixed content when serving over HTTPS
-	`object-src 'self'`,       // disallow embedding of resources from other origins
-}, "; ")
+var defaultCSP = CSP{
+	DefaultSrc:           []string{CSPSelf},
+	ScriptSrc:            []string{CSPSelf},
+	FrameAncestors:       []string{CSPNone},
+	FormAction:           []string{CSPSelf},
+	BaseURI:              []string{CSPSelf},
+	ObjectSrc:            []string{CSPSelf},
+	BlockAllMixedContent: true,
+}
 
 var (
 	errNoAddr = errors.New("server.Addr is empty")
@@ -84,15 +86,29 @@ var (
 
 type Middleware func(http.Handler) http.Handler
 
-var defaultMiddleware = []Middleware{
-	setHeaders,
-}
-
-func setHeaders(next http.Handler) http.Handler {
+func (s *Server) setHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referer-Policy", "same-origin")
-		w.Header().Set("Content-Security-Policy", cspHeader)
+
+		var policy CSP
+		if s.CSP != nil {
+			p, ok := s.CSP.PolicyFor(r)
+			if ok {
+				policy = p
+			} else {
+				// No pattern matched, use the default policy.
+				policy = defaultCSP
+			}
+		} else {
+			// No CSPMux configured, use the default policy.
+			policy = defaultCSP
+		}
+
+		if cspHeader := policy.String(); cspHeader != "" {
+			w.Header().Set("Content-Security-Policy", cspHeader)
+		}
+
 		next.ServeHTTP(w, r)
 	})
 }
@@ -130,7 +146,7 @@ func (s *Server) initHandler() *handler {
 
 	// Apply middleware.
 	h.handler = h.csrf.Handler(s.Mux)
-	mws := append(defaultMiddleware, s.Middleware...)
+	mws := append([]Middleware{s.setHeaders}, s.Middleware...)
 	for _, middleware := range slices.Backward(mws) {
 		h.handler = middleware(h.handler)
 	}
