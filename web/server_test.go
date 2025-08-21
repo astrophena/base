@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"sync"
 	"testing"
 
@@ -116,7 +117,7 @@ func TestServerListenAndServe(t *testing.T) {
 		}
 		testutil.AssertEqual(t, req.Header.Get("X-Content-Type-Options"), "nosniff")
 		testutil.AssertEqual(t, req.Header.Get("Referer-Policy"), "same-origin")
-		testutil.AssertEqual(t, req.Header.Get("Content-Security-Policy"), cspHeader)
+		testutil.AssertEqual(t, req.Header.Get("Content-Security-Policy"), defaultCSP.String())
 	}
 
 	// Try to gracefully shutdown the server.
@@ -129,6 +130,50 @@ func TestServerListenAndServe(t *testing.T) {
 		t.Fatalf("Test server crashed during shutdown: %v", err)
 	default:
 	}
+}
+
+func TestServerCSP(t *testing.T) {
+	newMux := func() *http.ServeMux {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/api/data", func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, "api")
+		})
+		mux.HandleFunc("/page", func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprint(w, "page")
+		})
+		return mux
+	}
+
+	cspMux := NewCSPMux()
+	apiPolicy := CSP{
+		DefaultSrc: []string{CSPNone},
+		ConnectSrc: []string{CSPSelf},
+	}
+	cspMux.Handle("/api/", apiPolicy)
+
+	s := &Server{
+		Mux: newMux(),
+		CSP: cspMux,
+	}
+
+	// Test request to /api/data with specific policy.
+	reqAPI := httptest.NewRequest(http.MethodGet, "/api/data", nil)
+	wAPI := httptest.NewRecorder()
+	s.ServeHTTP(wAPI, reqAPI)
+	testutil.AssertEqual(t, apiPolicy.String(), wAPI.Header().Get("Content-Security-Policy"))
+
+	// Test request to /page, which should fall back to the default policy.
+	reqPage := httptest.NewRequest(http.MethodGet, "/page", nil)
+	wPage := httptest.NewRecorder()
+	s.ServeHTTP(wPage, reqPage)
+	testutil.AssertEqual(t, defaultCSP.String(), wPage.Header().Get("Content-Security-Policy"))
+
+	// Test server without a CSP mux, which should also use the default policy.
+	s2 := &Server{Mux: newMux()}
+	reqPage2 := httptest.NewRequest(http.MethodGet, "/page", nil)
+	wPage2 := httptest.NewRecorder()
+	s2.ServeHTTP(wPage2, reqPage2)
+	testutil.AssertEqual(t, defaultCSP.String(), wPage2.Header().Get("Content-Security-Policy"))
 }
 
 // getFreePort asks the kernel for a free open port that is ready to use.
