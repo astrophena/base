@@ -100,6 +100,9 @@ func loadInfo(buildinfo func() (*debug.BuildInfo, bool)) Info {
 	}
 
 	i.Name = strings.TrimPrefix(bi.Path, bi.Main.Path)
+	if bi.Path == bi.Main.Path && i.ModuleName != "" {
+		i.Name = i.ModuleName
+	}
 	// Use executable name as a last resort in tests.
 	if testing.Testing() && i.Name == "" {
 		exe, err := os.Executable()
