@@ -111,6 +111,13 @@ func (r *statusRecorder) Write(b []byte) (int, error) {
 	return size, err
 }
 
+// Flush implements the [http.Flusher] interface.
+func (r *statusRecorder) Flush() {
+	if flusher, ok := r.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
 func (s *Server) logRequest(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
