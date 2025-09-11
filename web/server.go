@@ -10,13 +10,13 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"net"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
-	"go.astrophena.name/base/cli"
 	"go.astrophena.name/base/logger"
 	"go.astrophena.name/base/syncx"
 	"go.astrophena.name/base/version"
@@ -86,6 +86,67 @@ var (
 
 type Middleware func(http.Handler) http.Handler
 
+// statusRecorder captures the HTTP status code and response size.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+	size   int
+}
+
+// WriteHeader captures the status code before writing it to the underlying
+// ResponseWriter.
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
+}
+
+// Write captures the number of bytes written and updates the status code if
+// WriteHeader has not been called.
+func (r *statusRecorder) Write(b []byte) (int, error) {
+	if r.status == 0 {
+		r.status = http.StatusOK
+	}
+	size, err := r.ResponseWriter.Write(b)
+	r.size += size
+	return size, err
+}
+
+func (s *Server) logRequest(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+
+		l := logger.Get(r.Context())
+		sl := l.With(
+			slog.String("ip", realIP(r)),
+			slog.String("method", r.Method),
+			slog.String("url", r.URL.String()),
+			slog.String("user_agent", r.UserAgent()),
+		)
+		ctx := logger.Put(r.Context(), &logger.Logger{
+			Logger: sl,
+			Level:  l.Level,
+		})
+		r = r.WithContext(ctx)
+
+		recorder := &statusRecorder{ResponseWriter: w}
+		next.ServeHTTP(recorder, r)
+
+		logger.Info(ctx, "handled request",
+			slog.Int("status", recorder.status),
+			slog.Int("size", recorder.size),
+			slog.Duration("duration", time.Since(start)),
+		)
+	})
+}
+
+func realIP(r *http.Request) string {
+	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
+		return strings.Split(ip, ",")[0]
+	}
+	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
+	return ip
+}
+
 func (s *Server) setHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
@@ -146,7 +207,7 @@ func (s *Server) initHandler() *handler {
 
 	// Apply middleware.
 	h.handler = h.csrf.Handler(s.Mux)
-	mws := append([]Middleware{s.setHeaders}, s.Middleware...)
+	mws := append([]Middleware{s.logRequest, s.setHeaders}, s.Middleware...)
 	for _, middleware := range slices.Backward(mws) {
 		h.handler = middleware(h.handler)
 	}
@@ -166,21 +227,20 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		return errNoAddr
 	}
 
-	env := cli.GetEnv(ctx)
-
 	l, err := net.Listen("tcp", s.Addr)
 	if err != nil {
 		return fmt.Errorf("%w: %v", errListen, err)
 	}
 	scheme, host := "http", l.Addr().String()
 
-	env.Logf("Listening on %s://%s...", scheme, host)
+	logger.Info(ctx, "listening for HTTP requests", slog.String("addr", fmt.Sprintf("%s://%s", scheme, host)))
 
+	baseLogger := logger.Get(ctx)
 	httpSrv := &http.Server{
-		ErrorLog: log.New(errLogf(env.Logf), "", 0),
+		ErrorLog: slog.NewLogLogger(baseLogger.Handler(), slog.LevelError),
 		Handler:  s,
 		BaseContext: func(_ net.Listener) context.Context {
-			return cli.WithEnv(context.Background(), cli.GetEnv(ctx))
+			return logger.Put(context.Background(), baseLogger)
 		},
 	}
 
@@ -202,7 +262,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	case err := <-errCh:
 		return err
 	case <-ctx.Done():
-		env.Logf("Gracefully shutting down...")
+		logger.Info(ctx, "HTTP server gracefully shutting down")
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -213,12 +273,6 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-func errLogf(base logger.Logf) logger.Logf {
-	return func(format string, args ...any) {
-		base("HTTP server error: "+format, args...)
-	}
 }
 
 //go:embed static
