@@ -54,7 +54,7 @@ func Main(app App) {
 	}
 
 	if isPrintableError(err) {
-		logger.Error(ctx, err.Error())
+		logger.Error(ctx, "application exited with an error", slog.Any("err", err))
 	}
 	os.Exit(1)
 }
@@ -64,6 +64,9 @@ type logLevelFlag struct {
 }
 
 func (v logLevelFlag) String() string {
+	if v.level == nil {
+		return slog.LevelInfo.String()
+	}
 	return v.level.Level().String()
 }
 
