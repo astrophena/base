@@ -5,16 +5,18 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
-	"go.astrophena.name/base/cli"
 	"go.astrophena.name/base/logger"
 	"go.astrophena.name/base/testutil"
 )
@@ -72,9 +74,15 @@ func TestServerListenAndServe(t *testing.T) {
 	errCh := make(chan error, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 
-	env := &cli.Env{
-		Stderr: logger.Logf(t.Logf),
+	var logBuf bytes.Buffer
+	level := new(slog.LevelVar)
+	level.Set(slog.LevelInfo)
+	h := slog.NewJSONHandler(&logBuf, &slog.HandlerOptions{Level: level})
+	l := &logger.Logger{
+		Logger: slog.New(h),
+		Level:  level,
 	}
+	ctx = logger.Put(ctx, l)
 
 	s := &Server{
 		Addr:       addr,
@@ -84,7 +92,7 @@ func TestServerListenAndServe(t *testing.T) {
 	}
 
 	wg.Go(func() {
-		if err := s.ListenAndServe(cli.WithEnv(ctx, env)); err != nil {
+		if err := s.ListenAndServe(ctx); err != nil {
 			errCh <- err
 		}
 	})
@@ -129,6 +137,24 @@ func TestServerListenAndServe(t *testing.T) {
 	case err := <-errCh:
 		t.Fatalf("Test server crashed during shutdown: %v", err)
 	default:
+	}
+
+	// Check logs.
+	logOutput := logBuf.String()
+	if !strings.Contains(logOutput, `"msg":"listening for HTTP requests"`) {
+		t.Error("expected 'listening for HTTP requests' message in logs")
+	}
+	if !strings.Contains(logOutput, `"msg":"handled request"`) {
+		t.Error("expected 'handled request' message in logs")
+	}
+	if !strings.Contains(logOutput, `"url":"/health"`) {
+		t.Error("expected '/health' URL in logs")
+	}
+	if !strings.Contains(logOutput, `"status":200`) {
+		t.Error("expected status 200 in logs")
+	}
+	if !strings.Contains(logOutput, `"msg":"HTTP server gracefully shutting down"`) {
+		t.Error("expected 'HTTP server gracefully shutting down' message in logs")
 	}
 }
 

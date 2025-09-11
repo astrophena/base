@@ -12,10 +12,11 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"log/slog"
 	"net/http"
 	"strings"
 
-	"go.astrophena.name/base/cli"
+	"go.astrophena.name/base/logger"
 )
 
 type contextKey string
@@ -100,8 +101,7 @@ var (
 )
 
 // RespondError writes an error response in HTML format to w and logs the error
-// using [logger.Logf] from context's environment ([cli.Env]) if error is
-// [ErrInternalServerError].
+// using [logger.Error] if error is [ErrInternalServerError].
 //
 // If the error is a [StatusErr] or wraps it, it extracts the HTTP status code and
 // sets the response status code accordingly. Otherwise, it sets the response
@@ -121,8 +121,7 @@ func RespondError(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 // RespondJSONError writes an error response in JSON format to w and logs the
-// error using [logger.Logf] from context's environment ([cli.Env]) if error is
-// [ErrInternalServerError].
+// error using [logger.Error] if error is [ErrInternalServerError].
 //
 // If the error is a [StatusErr] or wraps it, it extracts the HTTP status code
 // and sets the response status code accordingly. Otherwise, it sets the
@@ -139,8 +138,6 @@ func RespondJSONError(w http.ResponseWriter, r *http.Request, err error) {
 }
 
 func respondError(json bool, w http.ResponseWriter, r *http.Request, err error) {
-	logf := cli.GetEnv(r.Context()).Logf
-
 	var se StatusErr
 	if !errors.As(err, &se) {
 		se = ErrInternalServerError
@@ -150,7 +147,7 @@ func respondError(json bool, w http.ResponseWriter, r *http.Request, err error) 
 	}
 	w.WriteHeader(int(se))
 	if se == ErrInternalServerError {
-		logf("%s: %s %s -> %v", http.StatusText(int(se)), r.Method, r.URL.Path, err)
+		logger.Error(r.Context(), strings.ToLower(http.StatusText(int(se))), slog.Any("err", err))
 	}
 	if json {
 		respondJSON(w, &errorResponse{Status: "error", Error: err.Error()}, true)
@@ -173,7 +170,7 @@ func respondError(json bool, w http.ResponseWriter, r *http.Request, err error) 
 
 	var buf bytes.Buffer
 	if err := errorTemplate.Execute(&buf, data); err != nil {
-		logf("web.RespondError: executing error template failed: %v", err)
+		logger.Error(r.Context(), "failed to execute error template", slog.Any("err", err))
 		// Fallback, if template execution fails.
 		fmt.Fprintf(w, "%d: %s", data.StatusCode, data.StatusText)
 		return

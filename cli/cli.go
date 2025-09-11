@@ -14,33 +14,66 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"runtime"
 	"runtime/pprof"
+	"strings"
+	"time"
 
 	"go.astrophena.name/base/logger"
 	"go.astrophena.name/base/syncx"
 	"go.astrophena.name/base/version"
+
+	"github.com/lmittmann/tint"
+	"golang.org/x/term"
 )
 
 // Main runs an application, handling signal-based cancellation and printing errors
 // to stderr. It is intended to be called directly from a program's main function.
 func Main(app App) {
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
+	// Pre-parse flags to configure the logger before anything else.
+	level := new(slog.LevelVar)
+	level.Set(slog.LevelInfo) // Default.
+
+	fs := flag.NewFlagSet(os.Args[0], flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.Var(logLevelFlag{level}, "log-level", "Log level (debug, info, warn, error).")
+	_ = fs.Parse(os.Args[1:]) // Ignore errors; we only care about log-level.
+
+	l := newLogger(os.Stderr, level)
+	ctx := logger.Put(context.Background(), l)
+
+	ctx, cancel := signal.NotifyContext(ctx, os.Interrupt)
 	defer cancel()
 
 	err := Run(ctx, app)
-
 	if err == nil {
 		return
 	}
 
 	if isPrintableError(err) {
-		fmt.Fprintln(os.Stderr, err)
+		logger.Error(ctx, err.Error())
 	}
 	os.Exit(1)
+}
+
+type logLevelFlag struct {
+	level *slog.LevelVar
+}
+
+func (v logLevelFlag) String() string {
+	return v.level.Level().String()
+}
+
+func (v logLevelFlag) Set(s string) error {
+	var l slog.Level
+	if err := l.UnmarshalText([]byte(strings.ToLower(s))); err != nil {
+		return fmt.Errorf("invalid log level %q: %w", s, err)
+	}
+	v.level.Set(l)
+	return nil
 }
 
 type unprintableError struct{ err error }
@@ -113,15 +146,6 @@ type Env struct {
 	Stdin  io.Reader
 	Stdout io.Writer
 	Stderr io.Writer
-
-	logf syncx.Lazy[logger.Logf]
-}
-
-// Logf prints a formatted message to the environment's standard error.
-func (e *Env) Logf(format string, args ...any) {
-	e.logf.Get(func() logger.Logf {
-		return log.New(e.Stderr, "", 0).Printf
-	})(format, args...)
 }
 
 // OSEnv creates an Env based on the current operating system environment.
@@ -155,6 +179,20 @@ func Run(ctx context.Context, app App) error {
 	}
 
 	env := GetEnv(ctx)
+	// The logger is typically initialized in Main. If Run is called directly
+	// (e.g., in tests), a default logger will be created if one is not present
+	// in the context. The log level for this logger can be configured via flags.
+	if logger.IsDefault(logger.Get(ctx)) {
+		level := new(slog.LevelVar)
+		level.Set(slog.LevelInfo)
+		l := newLogger(env.Stderr, level)
+		ctx = logger.Put(ctx, l)
+	}
+
+	// Add log-level flag if not already defined by the app.
+	if flags.Lookup("log-level") == nil {
+		flags.Var(logLevelFlag{logger.LevelVar(ctx)}, "log-level", "Log level (debug, info, warn, error).")
+	}
 
 	flags.Usage = usage(flags, env.Stderr)
 	flags.SetOutput(env.Stderr)
@@ -198,6 +236,21 @@ func Run(ctx context.Context, app App) error {
 	}
 
 	return nil
+}
+
+func newLogger(w io.Writer, level *slog.LevelVar) *logger.Logger {
+	opts := &tint.Options{Level: level, TimeFormat: time.Kitchen}
+
+	var handler slog.Handler
+	if f, ok := w.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+		handler = tint.NewHandler(w, opts)
+	} else {
+		handler = slog.NewJSONHandler(w, &slog.HandlerOptions{Level: level})
+	}
+	return &logger.Logger{
+		Logger: slog.New(handler),
+		Level:  level,
+	}
 }
 
 func usage(flags *flag.FlagSet, stderr io.Writer) func() {

@@ -232,16 +232,3 @@ func TestRun(t *testing.T) {
 		})
 	})
 }
-
-func TestEnvLogf(t *testing.T) {
-	var stderr bytes.Buffer
-	env := &cli.Env{
-		Stderr: &stderr,
-	}
-
-	env.Logf("hello %s", "world")
-
-	// log.Printf adds a newline.
-	want := "hello world\n"
-	testutil.AssertEqual(t, stderr.String(), want)
-}

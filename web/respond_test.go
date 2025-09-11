@@ -10,14 +10,28 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"go.astrophena.name/base/cli"
+	"go.astrophena.name/base/logger"
 	"go.astrophena.name/base/testutil"
 )
+
+func setupTestContext(t *testing.T) (context.Context, *bytes.Buffer) {
+	var buf bytes.Buffer
+	level := new(slog.LevelVar)
+	level.Set(slog.LevelDebug)
+	h := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: level})
+	l := &logger.Logger{
+		Logger: slog.New(h),
+		Level:  level,
+	}
+	ctx := logger.Put(context.Background(), l)
+	return ctx, &buf
+}
 
 func TestRespondError(t *testing.T) {
 	cases := map[string]struct {
@@ -63,13 +77,7 @@ func TestRespondError(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-
-			var stderr bytes.Buffer
-			env := &cli.Env{
-				Stderr: &stderr,
-			}
-			ctx := cli.WithEnv(context.Background(), env)
-
+			ctx, logBuf := setupTestContext(t)
 			r := httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
 
 			if tc.trusted {
@@ -78,8 +86,17 @@ func TestRespondError(t *testing.T) {
 
 			RespondError(w, r, tc.err)
 
-			if tc.wantToLog && stderr.Len() == 0 {
-				t.Fatalf("wanted to log a line, but didn't")
+			if tc.wantToLog {
+				if logBuf.Len() == 0 {
+					t.Fatal("wanted to log a line, but didn't")
+				}
+				if !strings.Contains(logBuf.String(), `"level":"ERROR"`) {
+					t.Errorf("expected ERROR level log, got: %s", logBuf.String())
+				}
+			} else {
+				if logBuf.Len() != 0 {
+					t.Fatalf("didn't want to log, but did: %s", logBuf.String())
+				}
 			}
 
 			testutil.AssertEqual(t, tc.wantStatus, w.Code)
@@ -150,19 +167,22 @@ func TestRespondJSONError(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-
-			var stderr bytes.Buffer
-			env := &cli.Env{
-				Stderr: &stderr,
-			}
-			ctx := cli.WithEnv(context.Background(), env)
-
+			ctx, logBuf := setupTestContext(t)
 			r := httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
 
 			RespondJSONError(w, r, tc.err)
 
-			if tc.wantToLog && stderr.Len() == 0 {
-				t.Fatalf("wanted to log a line, but didn't")
+			if tc.wantToLog {
+				if logBuf.Len() == 0 {
+					t.Fatal("wanted to log a line, but didn't")
+				}
+				if !strings.Contains(logBuf.String(), `"level":"ERROR"`) {
+					t.Errorf("expected ERROR level log, got: %s", logBuf.String())
+				}
+			} else {
+				if logBuf.Len() != 0 {
+					t.Fatalf("didn't want to log, but did: %s", logBuf.String())
+				}
 			}
 
 			testutil.AssertEqual(t, tc.wantStatus, w.Code)

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 
 	"go.astrophena.name/base/cli"
 	"go.astrophena.name/base/devtools/internal"
+	"go.astrophena.name/base/logger"
 	"go.astrophena.name/base/txtar"
 )
 
@@ -88,8 +90,6 @@ func (a *app) Flags(fs *flag.FlagSet) {
 func (a *app) Run(ctx context.Context) error {
 	internal.EnsureRoot()
 
-	env := cli.GetEnv(ctx)
-
 	cfg, err := parseConfig()
 	if err != nil {
 		return err
@@ -126,7 +126,7 @@ func (a *app) Run(ctx context.Context) error {
 		// If in check mode, we just check and record if a header is missing.
 		if a.check {
 			if !hasHeader {
-				env.Logf("File is missing copyright header: %s", path)
+				logger.Info(ctx, "file is missing copyright header", slog.String("path", path))
 				foundMissing = true
 			}
 			continue
@@ -146,7 +146,7 @@ func (a *app) Run(ctx context.Context) error {
 		hdr := fmt.Sprintf(tmpl, year)
 
 		if a.dry {
-			env.Logf("Would add copyright header to file %s:\n%s", path, hdr)
+			logger.Info(ctx, "would add copyright header", slog.String("path", path), slog.String("header", hdr))
 			continue
 		}
 
