@@ -54,7 +54,7 @@ func Main(app App) {
 	}
 
 	if isPrintableError(err) {
-		logger.Error(ctx, "application exited with an error", slog.Any("err", err))
+		fmt.Fprintln(os.Stderr, err)
 	}
 	os.Exit(1)
 }
