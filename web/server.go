@@ -67,18 +67,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.handler.Get(s.initHandler).handler.ServeHTTP(w, r)
 }
 
-// The default Content-Security-Policy.
-// Based on https://github.com/tailscale/tailscale/blob/4ad3f01225745294474f1ae0de33e5a86824a744/safeweb/http.go.
-var defaultCSP = CSP{
-	DefaultSrc:           []string{CSPSelf},
-	ScriptSrc:            []string{CSPSelf},
-	FrameAncestors:       []string{CSPNone},
-	FormAction:           []string{CSPSelf},
-	BaseURI:              []string{CSPSelf},
-	ObjectSrc:            []string{CSPSelf},
-	BlockAllMixedContent: true,
-}
-
 var (
 	errNoAddr = errors.New("server.Addr is empty")
 	errListen = errors.New("failed to listen")

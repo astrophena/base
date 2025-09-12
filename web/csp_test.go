@@ -54,6 +54,34 @@ func TestCSP_String(t *testing.T) {
 	}
 }
 
+func TestCSP_Finalize(t *testing.T) {
+	p := CSP{
+		DefaultSrc: []string{CSPSelf},
+		ScriptSrc:  []string{CSPSelf, "https://example.com"},
+	}
+
+	if p.str != nil {
+		t.Fatal("p.str should be nil before Finalize")
+	}
+
+	finalized := p.Finalize()
+
+	if finalized.str == nil {
+		t.Fatal("finalized.str should not be nil after Finalize")
+	}
+
+	want := "default-src 'self'; script-src 'self' https://example.com"
+	gotString := finalized.String()
+	testutil.AssertEqual(t, gotString, want)
+
+	if p.str != nil {
+		t.Fatal("original p.str should still be nil")
+	}
+
+	gotString = p.String()
+	testutil.AssertEqual(t, gotString, want)
+}
+
 func TestCSPMux_HandlePanic(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
