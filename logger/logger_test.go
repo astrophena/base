@@ -15,14 +15,13 @@ import (
 )
 
 func TestLogger(t *testing.T) {
-	var buf bytes.Buffer
 	level := new(slog.LevelVar)
 	level.Set(slog.LevelDebug)
-	h := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: level})
-	l := &Logger{
-		Logger: slog.New(h),
-		Level:  level,
-	}
+	l := New(level)
+
+	var buf bytes.Buffer
+	h := slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: l.Level})
+	l.Attach(h)
 
 	ctx := context.Background()
 
@@ -67,6 +66,53 @@ func TestLogger(t *testing.T) {
 
 		// Reset for other tests
 		got.Set(slog.LevelDebug)
+	})
+
+	t.Run("AttachAndDetach", func(t *testing.T) {
+		var buf1, buf2 bytes.Buffer
+
+		h1 := slog.NewJSONHandler(&buf1, &slog.HandlerOptions{Level: slog.LevelDebug})
+		h2 := slog.NewTextHandler(&buf2, &slog.HandlerOptions{Level: slog.LevelInfo})
+
+		logger := New(nil)
+		logger.Attach(h1)
+		logger.Attach(h2)
+
+		ctx := Put(context.Background(), logger)
+
+		Debug(ctx, "debug msg")
+		Info(ctx, "info msg")
+
+		if !strings.Contains(buf1.String(), `"msg":"debug msg"`) {
+			t.Error("h1 should contain debug msg")
+		}
+		if !strings.Contains(buf1.String(), `"msg":"info msg"`) {
+			t.Error("h1 should contain info msg")
+		}
+		if strings.Contains(buf2.String(), "level=DEBUG") {
+			t.Error("h2 should not contain debug msg")
+		}
+		if !strings.Contains(buf2.String(), "level=INFO") {
+			t.Error("h2 should contain info msg")
+		}
+
+		// Detach h2 and log again.
+		logger.Detach(h2)
+		buf1.Reset()
+		buf2.Reset()
+
+		Debug(ctx, "debug again")
+		Info(ctx, "info again")
+
+		if !strings.Contains(buf1.String(), "debug again") {
+			t.Error("h1 should contain the second debug message")
+		}
+		if !strings.Contains(buf1.String(), "info again") {
+			t.Error("h1 should contain the second info message")
+		}
+		if buf2.Len() > 0 {
+			t.Errorf("h2's buffer should be empty, but got: %s", buf2.String())
+		}
 	})
 
 	t.Run("Info", func(t *testing.T) {
