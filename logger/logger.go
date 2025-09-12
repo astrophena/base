@@ -2,6 +2,8 @@
 // Use of this source code is governed by the ISC
 // license that can be found in the LICENSE.md file.
 
+// vim: foldmethod=marker
+
 // Package logger provides a context-aware logger built on [slog].
 package logger
 
@@ -9,27 +11,131 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"sync"
 )
 
 type ctxKey string
 
 const loggerKey ctxKey = "logger"
 
-// Logger encapsulates an [slog.Logger] and its [slog.LevelVar] for dynamic level control.
+// multiHandler fans out log records to multiple handlers. {{{
+
+type multiHandler struct {
+	mu       sync.RWMutex
+	handlers []slog.Handler
+}
+
+func newMultiHandler(handlers ...slog.Handler) *multiHandler {
+	return &multiHandler{
+		handlers: handlers,
+	}
+}
+
+func (h *multiHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	for _, handler := range h.handlers {
+		if handler.Enabled(ctx, level) {
+			return true
+		}
+	}
+	return false
+}
+
+func (h *multiHandler) Handle(ctx context.Context, r slog.Record) error {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	var firstErr error
+	for _, handler := range h.handlers {
+		if handler.Enabled(ctx, r.Level) {
+			if err := handler.Handle(ctx, r); err != nil && firstErr == nil {
+				firstErr = err
+			}
+		}
+	}
+	return firstErr
+}
+
+func (h *multiHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	newHandlers := make([]slog.Handler, len(h.handlers))
+	for i, handler := range h.handlers {
+		newHandlers[i] = handler.WithAttrs(attrs)
+	}
+	return newMultiHandler(newHandlers...)
+}
+
+func (h *multiHandler) WithGroup(name string) slog.Handler {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	newHandlers := make([]slog.Handler, len(h.handlers))
+	for i, handler := range h.handlers {
+		newHandlers[i] = handler.WithGroup(name)
+	}
+	return newMultiHandler(newHandlers...)
+}
+
+func (h *multiHandler) Attach(handler slog.Handler) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.handlers = append(h.handlers, handler)
+}
+
+func (h *multiHandler) Detach(handler slog.Handler) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	newHandlers := make([]slog.Handler, 0, len(h.handlers))
+	for _, h := range h.handlers {
+		if h != handler {
+			newHandlers = append(newHandlers, h)
+		}
+	}
+	h.handlers = newHandlers
+}
+
+// }}}
+
+// Logger encapsulates an [slog.Logger] and allows attaching and detaching
+// [slog.Handler]s at runtime. It also holds a [slog.LevelVar] that can be
+// used to control the level of handlers that are created with it.
 type Logger struct {
 	*slog.Logger
-	Level *slog.LevelVar
+	Level   *slog.LevelVar
+	handler *multiHandler
+}
+
+// New creates a new Logger. The logger initially has no handlers.
+// Its LevelVar is initialized to LevelInfo if level is nil.
+func New(level *slog.LevelVar) *Logger {
+	if level == nil {
+		level = new(slog.LevelVar)
+		level.Set(slog.LevelInfo)
+	}
+	mh := newMultiHandler()
+	return &Logger{
+		Logger:  slog.New(mh),
+		Level:   level,
+		handler: mh,
+	}
+}
+
+// Attach attaches a handler to the logger.
+func (l *Logger) Attach(h slog.Handler) {
+	l.handler.Attach(h)
+}
+
+// Detach detaches a handler from the logger.
+func (l *Logger) Detach(h slog.Handler) {
+	l.handler.Detach(h)
 }
 
 var defaultLogger = newDefaultLogger()
 
 func newDefaultLogger() *Logger {
-	level := new(slog.LevelVar)
-	handler := slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: level})
-	return &Logger{
-		Logger: slog.New(handler),
-		Level:  level,
-	}
+	l := New(nil)
+	l.Attach(slog.NewTextHandler(io.Discard, &slog.HandlerOptions{Level: l.Level}))
+	return l
 }
 
 // Put returns a new context with the provided [Logger].

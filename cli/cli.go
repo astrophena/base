@@ -242,18 +242,17 @@ func Run(ctx context.Context, app App) error {
 }
 
 func newLogger(w io.Writer, level *slog.LevelVar) *logger.Logger {
-	opts := &tint.Options{Level: level, TimeFormat: time.Kitchen}
+	l := logger.New(level)
+	opts := &tint.Options{Level: l.Level, TimeFormat: time.Kitchen}
 
 	var handler slog.Handler
 	if f, ok := w.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
 		handler = tint.NewHandler(w, opts)
 	} else {
-		handler = slog.NewJSONHandler(w, &slog.HandlerOptions{Level: level})
+		handler = slog.NewJSONHandler(w, &slog.HandlerOptions{Level: l.Level})
 	}
-	return &logger.Logger{
-		Logger: slog.New(handler),
-		Level:  level,
-	}
+	l.Attach(handler)
+	return l
 }
 
 func usage(flags *flag.FlagSet, stderr io.Writer) func() {
