@@ -20,6 +20,18 @@ const (
 	CSPUnsafeEval   = "'unsafe-eval'"
 )
 
+// The default Content-Security-Policy.
+// Based on https://github.com/tailscale/tailscale/blob/4ad3f01225745294474f1ae0de33e5a86824a744/safeweb/http.go.
+var defaultCSP = CSP{
+	DefaultSrc:           []string{CSPSelf},
+	ScriptSrc:            []string{CSPSelf},
+	FrameAncestors:       []string{CSPNone},
+	FormAction:           []string{CSPSelf},
+	BaseURI:              []string{CSPSelf},
+	ObjectSrc:            []string{CSPSelf},
+	BlockAllMixedContent: true,
+}.Finalize()
+
 // CSP represents a Content Security Policy.
 // The zero value is an empty policy.
 //
@@ -48,10 +60,19 @@ type CSP struct {
 	NavigateTo              []string `csp:"navigate-to"`
 	BlockAllMixedContent    bool     `csp:"block-all-mixed-content"`
 	UpgradeInsecureRequests bool     `csp:"upgrade-insecure-requests"`
+
+	str *string
 }
 
 // String returns the CSP header value.
 func (p CSP) String() string {
+	if p.str != nil {
+		return *p.str
+	}
+	return p.compute()
+}
+
+func (p CSP) compute() string {
 	var directives []string
 	val := reflect.ValueOf(p)
 	typ := val.Type()
@@ -79,6 +100,15 @@ func (p CSP) String() string {
 
 	sort.Strings(directives)
 	return strings.Join(directives, "; ")
+}
+
+// Finalize computes and caches the string representation of the policy.
+// CSPs are intended to be immutable; Finalize should be called after a policy
+// is fully constructed.
+func (p CSP) Finalize() CSP {
+	s := p.compute()
+	p.str = &s
+	return p
 }
 
 // CSPMux is a multiplexer for Content Security Policies.
@@ -110,7 +140,7 @@ func (mux *CSPMux) Handle(pattern string, policy CSP) {
 
 	// Use a dummy handler. We only care about the pattern matching.
 	mux.mux.Handle(pattern, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	mux.m[pattern] = policy
+	mux.m[pattern] = policy.Finalize()
 }
 
 // PolicyFor returns the CSP for the given request.
