@@ -5,6 +5,7 @@
 package web
 
 import (
+	"bufio"
 	"context"
 	"embed"
 	"errors"
@@ -104,6 +105,14 @@ func (r *statusRecorder) Flush() {
 	if flusher, ok := r.ResponseWriter.(http.Flusher); ok {
 		flusher.Flush()
 	}
+}
+
+// Hijack implements the [http.Hijacker] interface.
+func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hijacker, ok := r.ResponseWriter.(http.Hijacker); ok {
+		return hijacker.Hijack()
+	}
+	return nil, nil, errors.New("hijacking is not supported for this connection")
 }
 
 func (s *Server) logRequest(next http.Handler) http.Handler {
