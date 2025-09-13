@@ -244,7 +244,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		ErrorLog: slog.NewLogLogger(baseLogger.Handler(), slog.LevelError),
 		Handler:  s,
 		BaseContext: func(_ net.Listener) context.Context {
-			return logger.Put(context.Background(), baseLogger)
+			return logger.Put(ctx, baseLogger)
 		},
 	}
 
