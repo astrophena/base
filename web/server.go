@@ -38,7 +38,8 @@ type Server struct {
 	// Middleware specifies an optional slice of HTTP middleware that's applied to
 	// each request.
 	Middleware []Middleware
-	// Addr is a network address to listen on (in the form of "host:port").
+	// Addr is a network address to listen on. For TCP, use "host:port". For a
+	// Unix socket, use an absolute file path (e.g., "/run/service/socket").
 	Addr string
 	// Ready specifies an optional function to be called when the server is ready
 	// to serve requests.
@@ -231,11 +232,19 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		return errNoAddr
 	}
 
-	l, err := net.Listen("tcp", s.Addr)
+	network := "tcp"
+	if strings.HasPrefix(s.Addr, "/") {
+		network = "unix"
+	}
+
+	l, err := net.Listen(network, s.Addr)
 	if err != nil {
 		return fmt.Errorf("%w: %v", errListen, err)
 	}
 	scheme, host := "http", l.Addr().String()
+	if network == "unix" {
+		scheme = "unix"
+	}
 
 	logger.Info(ctx, "listening for HTTP requests", slog.String("addr", fmt.Sprintf("%s://%s", scheme, host)))
 
