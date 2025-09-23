@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"slices"
 	"strings"
 	"time"
@@ -243,6 +244,11 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	}
 	scheme, host := "http", l.Addr().String()
 	if network == "unix" {
+		// Set socket permissions.
+		if err := os.Chmod(s.Addr, 0o666); err != nil {
+			return fmt.Errorf("%w: failed to set socket permissions: %v", errListen, err)
+		}
+
 		scheme = "unix"
 	}
 
