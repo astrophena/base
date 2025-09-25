@@ -18,7 +18,7 @@
 -- pre-commit.json --
 [
   {
-    "run": ["gofmt", "-d"]
+    "run": ["gofmt", "-d", "."]
   },
   {
     "run": ["go", "tool", "staticcheck", "./..."]
