@@ -6,12 +6,15 @@
 package web
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 
 	"go.astrophena.name/base/testutil"
+	"go.astrophena.name/base/version"
 )
 
 func TestDebugger(t *testing.T) {
@@ -102,6 +105,57 @@ func TestDebuggerGC(t *testing.T) {
 
 	body := send(t, mux, http.MethodGet, "/debug/gc", http.StatusOK)
 	testutil.AssertEqual(t, "Running GC...\nDone.\n", body)
+}
+
+func TestDebuggerDiscovery(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	dbg := Debugger(mux)
+
+	// Add a custom link to ensure it appears in the discovery output.
+	dbg.Link("/custom/path", "My Custom Link")
+
+	body := send(t, mux, http.MethodGet, "/debug/discovery", http.StatusOK)
+
+	var discovery DebugHandlerDiscovery
+	if err := json.Unmarshal([]byte(body), &discovery); err != nil {
+		t.Fatalf("failed to unmarshal discovery response: %v\nbody: %s", err, body)
+	}
+
+	// Check process and version info.
+	hostname, _ := os.Hostname()
+	testutil.AssertEqual(t, discovery.Hostname, hostname)
+	testutil.AssertEqual(t, discovery.PID, os.Getpid())
+	testutil.AssertEqual(t, discovery.Version.Name, version.CmdName())
+
+	// Sanity check runtime stats.
+	if discovery.Runtime.NumGoroutines < 1 {
+		t.Errorf("expected at least 1 goroutine, got %d", discovery.Runtime.NumGoroutines)
+	}
+	if discovery.Runtime.Uptime == "" {
+		t.Error("expected Uptime to not be empty")
+	}
+
+	// Check that links are present.
+	wantLinks := []link{
+		{URL: "/debug/pprof/", Desc: "pprof"},
+		{URL: "/debug/gc", Desc: "Force GC"},
+		{URL: "/custom/path", Desc: "My Custom Link"},
+	}
+
+	for _, want := range wantLinks {
+		found := false
+		for _, got := range discovery.Links {
+			if got.URL == want.URL && got.Desc == want.Desc {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected to find link %+v in discovery response, but it was missing", want)
+		}
+	}
 }
 
 func getDebug(t *testing.T, mux *http.ServeMux) string {

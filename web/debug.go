@@ -52,7 +52,7 @@ type DebugHandler struct {
 	tpl      syncx.Lazy[*template.Template] // template that is used for rendering debug page
 }
 
-// Utility types used for rendering templates.
+// Utility types used for rendering templates and discovery endpoint.
 type (
 	kvfunc struct {
 		k string
@@ -62,7 +62,10 @@ type (
 		K string
 		V any
 	}
-	link struct{ URL, Desc string }
+	link struct {
+		URL  string `json:"url"`
+		Desc string `json:"desc"`
+	}
 )
 
 // MenuItem is a debug page header menu item.
@@ -103,11 +106,12 @@ func Debugger(mux *http.ServeMux) *DebugHandler {
 	ret.Handle("pprof/", "pprof", http.HandlerFunc(pprof.Index))
 	ret.Link("/debug/pprof/goroutine?debug=1", "Goroutines (collapsed)")
 	ret.Link("/debug/pprof/goroutine?debug=2", "Goroutines (full)")
-	ret.Handle("gc", "Force GC", http.HandlerFunc(serveGC))
+	ret.HandleFunc("gc", "Force GC", serveGC)
 	// Register this one directly on mux, rather than using ret.URL/etc, as we
 	// don't need another line of output on the index page. The /pprof/ index
 	// already covers it.
-	mux.Handle("/debug/pprof/profile", http.HandlerFunc(pprof.Profile))
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/discovery", ret.handleDiscovery)
 
 	return ret
 }
@@ -226,4 +230,65 @@ func (d *DebugHandler) MenuFunc(f func(*http.Request) []MenuItem) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.menuFunc = f
+}
+
+// DebugHandlerDiscovery provides a machine-readable overview of the running service.
+// It's served at /debug/discovery and is intended for use by monitoring tools
+// and automated dashboards.
+type DebugHandlerDiscovery struct {
+	Version  version.Info `json:"version"`
+	Runtime  RuntimeStats `json:"runtime"`
+	Hostname string       `json:"hostname"`
+	PID      int          `json:"pid"`
+	Links    []link       `json:"links"`
+}
+
+// RuntimeStats holds live runtime statistics for the service.
+type RuntimeStats struct {
+	Uptime        string `json:"uptime"`
+	NumGoroutines int    `json:"num_goroutines"`
+	Memory        struct {
+		// Heap memory currently allocated (MB).
+		Alloc uint64 `json:"alloc_mb"`
+		// Total memory allocated since startup (MB).
+		TotalAlloc uint64 `json:"total_alloc_mb"`
+		// Total memory obtained from the OS (MB).
+		Sys uint64 `json:"sys_mb"`
+	} `json:"memory"`
+	GC struct {
+		NumGC  uint32 `json:"num_gc"`
+		LastGC string `json:"last_gc,omitempty"` // Time of the last garbage collection.
+	} `json:"gc"`
+}
+
+func (d *DebugHandler) handleDiscovery(w http.ResponseWriter, r *http.Request) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var mem runtime.MemStats
+	runtime.ReadMemStats(&mem)
+
+	stats := RuntimeStats{
+		Uptime:        uptime().(time.Duration).String(),
+		NumGoroutines: runtime.NumGoroutine(),
+	}
+	stats.Memory.Alloc = mem.Alloc / 1024 / 1024
+	stats.Memory.TotalAlloc = mem.TotalAlloc / 1024 / 1024
+	stats.Memory.Sys = mem.Sys / 1024 / 1024
+	stats.GC.NumGC = mem.NumGC
+	if mem.LastGC != 0 {
+		stats.GC.LastGC = time.Unix(0, int64(mem.LastGC)).Format(time.RFC3339)
+	}
+
+	hostname, _ := os.Hostname()
+
+	di := &DebugHandlerDiscovery{
+		Version:  version.Version(),
+		Runtime:  stats,
+		Hostname: hostname,
+		PID:      os.Getpid(),
+		Links:    slices.Clone(d.links),
+	}
+
+	RespondJSON(w, di)
 }
