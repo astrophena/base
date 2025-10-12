@@ -32,6 +32,9 @@ type Params struct {
 	//     header set to "application/x-www-form-urlencoded".
 	//   - If it's type is []byte, as raw bytes with no Content-Type header.
 	Body any
+	// WantStatusCode is the expected HTTP status code for the response.
+	// If not provided, http.StatusOK (200) will be used.
+	WantStatusCode int
 	// HTTPClient is an optional custom http.Client to use for the request.
 	// If not provided, DefaultClient will be used.
 	HTTPClient *http.Client
@@ -145,9 +148,13 @@ func Make[Response any](ctx context.Context, p Params) (Response, error) {
 		return resp, scrubErr(err, p.Scrubber)
 	}
 
-	if res.StatusCode != http.StatusOK {
+	wantCode := http.StatusOK
+	if p.WantStatusCode != 0 {
+		wantCode = p.WantStatusCode
+	}
+	if res.StatusCode != wantCode {
 		return resp, scrubErr(fmt.Errorf("%s %q: %w", p.Method, p.URL, &StatusError{
-			WantedStatusCode: http.StatusOK,
+			WantedStatusCode: wantCode,
 			StatusCode:       res.StatusCode,
 			Headers:          res.Header,
 			Body:             b,
