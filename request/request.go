@@ -27,8 +27,10 @@ type Params struct {
 	// Headers is a map of key-value pairs for additional request headers.
 	Headers map[string]string
 	// Body is any data to be sent in the request body. It will be marshaled to
-	// JSON or, if it's type is url.Values, as query string with Content-Type
-	// header set to "application/x-www-form-urlencoded".
+	// JSON or:
+	//   - If it's type is url.Values, as query string with Content-Type
+	//     header set to "application/x-www-form-urlencoded".
+	//   - If it's type is []byte, as raw bytes with no Content-Type header.
 	Body any
 	// HTTPClient is an optional custom http.Client to use for the request.
 	// If not provided, DefaultClient will be used.
@@ -88,6 +90,8 @@ func Make[Response any](ctx context.Context, p Params) (Response, error) {
 	)
 	if p.Body != nil {
 		switch v := p.Body.(type) {
+		case []byte:
+			data = v
 		case url.Values:
 			data = []byte(v.Encode())
 			contentType = "application/x-www-form-urlencoded"
