@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"strconv"
+	"sync/atomic"
 	"time"
 
 	"go.astrophena.name/base/cli"
@@ -41,8 +42,17 @@ func Notify(ctx context.Context, state State) {
 	}
 }
 
+var watchdogStarted atomic.Bool
+
 // Watchdog starts a systemd watchdog timer in a separate goroutine that is stopped when the context is canceled.
+// When the watchdog is not enabled for the service, it does nothing.
 func Watchdog(ctx context.Context) {
+	// Don't start the watchdog if it's already started.
+	if watchdogStarted.Load() {
+		return
+	}
+	watchdogStarted.Store(true)
+
 	interval := watchdogInterval(ctx)
 	if interval > 0 {
 		go func() {
