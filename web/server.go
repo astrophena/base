@@ -21,6 +21,7 @@ import (
 
 	"go.astrophena.name/base/logger"
 	"go.astrophena.name/base/syncx"
+	"go.astrophena.name/base/systemd"
 	"go.astrophena.name/base/version"
 	"go.astrophena.name/base/web/internal/hashfs"
 	"go.astrophena.name/base/web/internal/unionfs"
@@ -55,6 +56,9 @@ type Server struct {
 	// CSP is a multiplexer for Content Security Policies.
 	// If nil, a default restrictive policy is used.
 	CSP *CSPMux
+	// NotifySystemd specifies whether to notify systemd when the server is ready and where the server is stopping.
+	// Also, the server will start the systemd watchdog timer if enabled.
+	NotifySystemd bool
 
 	handler syncx.Lazy[*handler]
 }
@@ -277,11 +281,21 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		s.Ready()
 	}
 
+	if s.NotifySystemd {
+		systemd.Notify(ctx, systemd.Ready)
+		systemd.Notify(ctx, systemd.Status(fmt.Sprintf("Listening for HTTP requests on %s...", s.Addr)))
+		systemd.Watchdog(ctx)
+	}
+
 	select {
 	case err := <-errCh:
 		return err
 	case <-ctx.Done():
 		logger.Info(ctx, "HTTP server gracefully shutting down")
+
+		if s.NotifySystemd {
+			systemd.Notify(ctx, systemd.Stopping)
+		}
 
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
