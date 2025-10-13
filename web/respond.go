@@ -14,6 +14,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"strings"
 
 	"go.astrophena.name/base/logger"
@@ -158,7 +159,9 @@ func respondError(json bool, w http.ResponseWriter, r *http.Request, err error) 
 		StatusCode int
 		StatusText string
 		IsTrusted  bool
-		Error      error // set if IsTrusted is true
+		Error      error  // set if IsTrusted is true
+		Method     string // set if method not allowed
+		Stacktrace string // set if IsTrusted is true
 	}{
 		StatusCode: int(se),
 		StatusText: http.StatusText(int(se)),
@@ -166,6 +169,10 @@ func respondError(json bool, w http.ResponseWriter, r *http.Request, err error) 
 	}
 	if data.IsTrusted {
 		data.Error = err
+		data.Stacktrace = string(debug.Stack())
+	}
+	if data.StatusCode == http.StatusMethodNotAllowed {
+		data.Method = r.Method
 	}
 
 	var buf bytes.Buffer

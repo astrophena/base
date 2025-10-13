@@ -9,10 +9,28 @@
   <body>
     <main>
       <h1>{{ .StatusCode }} {{ .StatusText }}</h1>
+      {{ if eq .StatusCode 500 }}
+        <p>Oops, something went wrong.</p>
+      {{ else if eq .StatusCode 405 }}
+        <p>Method {{ .Method }} is not allowed.</p>
+      {{ else if eq .StatusCode 404 }}
+        <p>The page you were looking for doesn’t exist.</p>
+        <p>You may have mistyped the address or the page may have moved.</p>
+      {{ else if eq .StatusCode 403 }}
+        <p>You are not allowed to access this page.</p>
+      {{ else if eq .StatusCode 401 }}
+        <p>You need to authorize to access this page.</p>
+      {{ else if eq .StatusCode 400 }}
+        <p>Your request is invalid.</p>
+      {{ end }}
       {{ if .IsTrusted }}
-        <pre><code>{{ .Error }}</code></pre>
-      {{ else }}
-        <p>That&apos;s all I know.</p>
+        <details>
+          <summary>Technical information</summary>
+          <h2>Error</h2>
+          <pre><code>{{ .Error }}</code></pre>
+          <h2>Stacktrace</h2>
+          <pre><code>{{ .Stacktrace }}</code></pre>
+        </details>
       {{ end }}
     </main>
   </body>
