@@ -4,6 +4,8 @@
   "internal/hashfs/hashfs_test.go",
   "internal/unionfs/unionfs.go",
   "internal/unionfs/unionfs_test.go",
+  "rr/rr.go",
+  "rr/rr_test.go",
   "txtar/txtar.go",
   "web/debug.go",
   "web/debug_test.go"
