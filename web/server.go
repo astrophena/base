@@ -42,6 +42,8 @@ type Server struct {
 	Middleware []Middleware
 	// Addr is a network address to listen on. For TCP, use "host:port". For a
 	// Unix socket, use an absolute file path (e.g., "/run/service/socket").
+	// To use systemd socket activation, use "sd-socket:<name>", where <name> is
+	// the name of the socket defined in the systemd socket unit.
 	Addr string
 	// Ready specifies an optional function to be called when the server is ready
 	// to serve requests.
@@ -233,30 +235,44 @@ func (s *Server) StaticHashName(name string) string {
 
 // ListenAndServe starts the HTTP server that can be stopped by canceling ctx.
 func (s *Server) ListenAndServe(ctx context.Context) error {
-	if s.Addr == "" {
-		return errNoAddr
-	}
+	var l net.Listener
+	var err error
 
-	network := "tcp"
-	if strings.HasPrefix(s.Addr, "/") {
-		network = "unix"
-	}
-
-	l, err := net.Listen(network, s.Addr)
-	if err != nil {
-		return fmt.Errorf("%w: %v", errListen, err)
-	}
-	scheme, host := "http", l.Addr().String()
-	if network == "unix" {
-		// Set socket permissions.
-		if err := os.Chmod(s.Addr, 0o666); err != nil {
-			return fmt.Errorf("%w: failed to set socket permissions: %v", errListen, err)
+	if strings.HasPrefix(s.Addr, "sd-socket:") {
+		name := strings.TrimPrefix(s.Addr, "sd-socket:")
+		if name == "" {
+			return errors.New("web: socket activation address is missing name (e.g., sd-socket:name)")
+		}
+		l, err = systemd.Socket(ctx, name)
+		if err != nil {
+			return fmt.Errorf("%w: failed to get systemd socket: %v", errListen, err)
+		}
+		logger.Info(ctx, "using systemd socket", slog.String("name", name), slog.String("addr", l.Addr().String()))
+	} else {
+		if s.Addr == "" {
+			return errNoAddr
 		}
 
-		scheme = "unix"
-	}
+		network := "tcp"
+		if strings.HasPrefix(s.Addr, "/") {
+			network = "unix"
+		}
 
-	logger.Info(ctx, "listening for HTTP requests", slog.String("addr", fmt.Sprintf("%s://%s", scheme, host)))
+		l, err = net.Listen(network, s.Addr)
+		if err != nil {
+			return fmt.Errorf("%w: %v", errListen, err)
+		}
+		scheme, host := "http", l.Addr().String()
+		if network == "unix" {
+			// Set socket permissions.
+			if err := os.Chmod(s.Addr, 0o666); err != nil {
+				return fmt.Errorf("%w: failed to set socket permissions: %v", errListen, err)
+			}
+
+			scheme = "unix"
+		}
+		logger.Info(ctx, "listening for HTTP requests", slog.String("addr", fmt.Sprintf("%s://%s", scheme, host)))
+	}
 
 	baseLogger := logger.Get(ctx)
 	httpSrv := &http.Server{

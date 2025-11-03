@@ -2,7 +2,6 @@
 // Use of this source code is governed by the ISC
 // license that can be found in the LICENSE.md file.
 
-// Package systemd provides a simple interface to systemd's sd-notify protocol.
 package systemd
 
 // State represents the sd-notify state.
