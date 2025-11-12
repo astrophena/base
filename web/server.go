@@ -186,6 +186,18 @@ func (s *Server) setHeaders(next http.Handler) http.Handler {
 	})
 }
 
+func (s *Server) recoverPanic(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if err := recover(); err != nil {
+				w.Header().Set("Connection", "close")
+				RespondError(w, r, fmt.Errorf("%w: %s", ErrInternalServerError, err))
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
 func (s *Server) initHandler() *handler {
 	if s.Mux == nil {
 		panic("Server.Mux is nil")
@@ -220,6 +232,7 @@ func (s *Server) initHandler() *handler {
 	// Apply middleware.
 	h.handler = h.csrf.Handler(s.Mux)
 	mws := append([]Middleware{s.logRequest, s.setHeaders}, s.Middleware...)
+	mws = append(mws, s.recoverPanic) // always should be the last one
 	for _, middleware := range slices.Backward(mws) {
 		h.handler = middleware(h.handler)
 	}
