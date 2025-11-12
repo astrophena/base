@@ -27,6 +27,10 @@ import (
 	"go.astrophena.name/base/web/internal/unionfs"
 )
 
+type serverContextKeyType struct{}
+
+var serverContextKey = serverContextKeyType{}
+
 // Server is used to configure the HTTP server started by
 // [Server.ListenAndServe].
 //
@@ -247,6 +251,20 @@ func (s *Server) StaticHashName(name string) string {
 	return s.handler.Get(s.initHandler).static.HashName(name)
 }
 
+// StaticHashName returns the cache-busting hashed name for a static file path
+// for the server associated with the given request context.
+//
+// It panics if the context does not have a server. This is typically the case
+// when the function is called outside of a request handler for a server from
+// this package.
+func StaticHashName(ctx context.Context, name string) string {
+	s, ok := ctx.Value(serverContextKey).(*Server)
+	if !ok {
+		panic("web: StaticHashName called on a context without a server")
+	}
+	return s.StaticHashName(name)
+}
+
 // ListenAndServe starts the HTTP server that can be stopped by canceling ctx.
 func (s *Server) ListenAndServe(ctx context.Context) error {
 	var l net.Listener
@@ -293,7 +311,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		ErrorLog: slog.NewLogLogger(baseLogger.Handler(), slog.LevelError),
 		Handler:  s,
 		BaseContext: func(_ net.Listener) context.Context {
-			return logger.Put(ctx, baseLogger)
+			baseCtx := logger.Put(ctx, baseLogger)
+			return context.WithValue(baseCtx, serverContextKey, s)
 		},
 	}
 
