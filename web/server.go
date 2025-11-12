@@ -133,6 +133,7 @@ func (s *Server) logRequest(next http.Handler) http.Handler {
 			slog.String("method", r.Method),
 			slog.String("url", r.URL.String()),
 			slog.String("user_agent", r.UserAgent()),
+			slog.String("host", r.Host),
 		)
 		ctx := logger.Put(r.Context(), &logger.Logger{
 			Logger: sl,
