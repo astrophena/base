@@ -2,8 +2,7 @@
 // Use of this source code is governed by the ISC
 // license that can be found in the LICENSE.md file.
 
-// Package cli provides helpers for creating simple, single-command
-// command-line applications.
+// Package cli provides helpers for creating simple command-line applications.
 package cli
 
 import (
@@ -30,8 +29,7 @@ import (
 	"golang.org/x/term"
 )
 
-// Main runs an application, handling signal-based cancellation and printing errors
-// to stderr. It is intended to be called directly from a program's main function.
+// Main runs an [App].
 func Main(app App) {
 	// Pre-parse flags to configure the logger before anything else.
 	level := new(slog.LevelVar)
@@ -102,15 +100,13 @@ var ErrInvalidArgs = errors.New("invalid arguments")
 
 // App represents a runnable command-line application.
 type App interface {
-	// Run executes the application's primary logic.
 	Run(context.Context) error
 }
 
-// HasFlags is an App that can define its own command-line flags.
+// HasFlags is an [App] that can define its own command-line flags.
 type HasFlags interface {
 	App
 
-	// Flags registers flags with the given FlagSet.
 	Flags(*flag.FlagSet)
 }
 
@@ -136,7 +132,7 @@ func GetEnv(ctx context.Context) *Env {
 	return e
 }
 
-// WithEnv returns a new context that carries the provided application environment.
+// WithEnv returns a new context that carries the provided [Env].
 func WithEnv(ctx context.Context, e *Env) context.Context {
 	return context.WithValue(ctx, envKey, e)
 }
@@ -151,7 +147,7 @@ type Env struct {
 	Stderr io.Writer
 }
 
-// OSEnv creates an Env based on the current operating system environment.
+// OSEnv creates an [Env] based on the current operating system environment.
 func OSEnv() *Env {
 	return &Env{
 		Args:   os.Args[1:],
@@ -162,8 +158,7 @@ func OSEnv() *Env {
 	}
 }
 
-// Run executes an application. It parses flags, handles standard flags like
-// -version and -cpuprofile, and then runs the app.
+// Run executes an [App] within the provided context.
 func Run(ctx context.Context, app App) error {
 	name := version.CmdName()
 

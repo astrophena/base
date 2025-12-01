@@ -5,7 +5,11 @@
 // Package syncx contains useful synchronization primitives.
 package syncx
 
-import "sync"
+import (
+	"sync"
+
+	"github.com/go4org/hashtriemap"
+)
 
 // Protect wraps T into [Protected].
 func Protect[T any](val T) Protected[T] { return Protected[T]{val: val} }
@@ -18,7 +22,6 @@ type Protected[T any] struct {
 }
 
 // ReadAccess provides read access to the protected value.
-// It executes the provided function f with the value under a read lock.
 func (p *Protected[T]) ReadAccess(f func(T)) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -26,7 +29,6 @@ func (p *Protected[T]) ReadAccess(f func(T)) {
 }
 
 // WriteAccess provides write access to the protected value.
-// It executes the provided function f with the value under a write lock.
 func (p *Protected[T]) WriteAccess(f func(T)) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -96,38 +98,24 @@ func (lwg *LimitedWaitGroup) Done() {
 func (lwg *LimitedWaitGroup) Wait() { lwg.wg.Wait() }
 
 // Map is a generic version of [sync.Map].
-type Map[K comparable, V any] struct{ m sync.Map }
+type Map[K comparable, V any] struct{ m hashtriemap.HashTrieMap[K, V] }
 
 // Load is [sync.Map.Load].
-func (m *Map[K, V]) Load(key K) (value V, ok bool) {
-	val, ok := m.m.Load(key)
-	if !ok {
-		return value, false
-	}
-	return val.(V), true
-}
+func (m *Map[K, V]) Load(key K) (value V, ok bool) { return m.m.Load(key) }
 
 // Store is [sync.Map.Store].
 func (m *Map[K, V]) Store(key K, value V) { m.m.Store(key, value) }
 
 // LoadOrStore is [sync.Map.LoadOrStore].
 func (m *Map[K, V]) LoadOrStore(key K, value V) (actual V, loaded bool) {
-	v, loaded := m.m.LoadOrStore(key, value)
-	return v.(V), loaded
+	return m.m.LoadOrStore(key, value)
 }
 
 // LoadAndDelete is [sync.Map.LoadAndDelete].
-func (m *Map[K, V]) LoadAndDelete(key K) (value V, loaded bool) {
-	v, loaded := m.m.LoadAndDelete(key)
-	return v.(V), loaded
-}
+func (m *Map[K, V]) LoadAndDelete(key K) (value V, loaded bool) { return m.m.LoadAndDelete(key) }
 
 // Delete is [sync.Map.Delete].
 func (m *Map[K, V]) Delete(key K) { m.m.Delete(key) }
 
 // Range is [sync.Map.Range].
-func (m *Map[K, V]) Range(f func(key K, value V) bool) {
-	m.m.Range(func(key, value any) bool {
-		return f(key.(K), value.(V))
-	})
-}
+func (m *Map[K, V]) Range(f func(key K, value V) bool) { m.m.Range(f) }

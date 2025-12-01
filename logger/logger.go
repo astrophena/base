@@ -2,8 +2,6 @@
 // Use of this source code is governed by the ISC
 // license that can be found in the LICENSE.md file.
 
-// vim: foldmethod=marker
-
 // Package logger provides a context-aware logger built on [slog].
 package logger
 
@@ -18,8 +16,7 @@ type ctxKey string
 
 const loggerKey ctxKey = "logger"
 
-// multiHandler fans out log records to multiple handlers. {{{
-
+// multiHandler fans out log records to multiple handlers.
 type multiHandler struct {
 	mu       sync.RWMutex
 	handlers []slog.Handler
@@ -94,10 +91,8 @@ func (h *multiHandler) Detach(handler slog.Handler) {
 	h.handlers = newHandlers
 }
 
-// }}}
-
 // Logger encapsulates an [slog.Logger] and allows attaching and detaching
-// [slog.Handler]s at runtime. It also holds a [slog.LevelVar] that can be
+// [slog.Handler] at runtime. It also holds a [slog.LevelVar] that can be
 // used to control the level of handlers that are created with it.
 type Logger struct {
 	*slog.Logger

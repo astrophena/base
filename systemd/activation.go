@@ -11,9 +11,6 @@ import (
 
 // Socket retrieves a named listener from systemd socket activation.
 //
-// It checks for the LISTEN_PID, LISTEN_FDS, and LISTEN_FDNAMES environment
-// variables to find the file descriptor corresponding to the given name.
-//
 // This function is only implemented on Linux. On other platforms, it will
 // always return an error.
 func Socket(ctx context.Context, name string) (net.Listener, error) {

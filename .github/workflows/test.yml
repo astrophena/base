@@ -16,9 +16,3 @@ jobs:
           go-version-file: 'go.mod'
       - name: 'Test'
         run: 'go tool pre-commit'
-      - name: 'Trigger vanity deploy'
-        if: "github.ref == 'refs/heads/master'"
-        env:
-          VANITY_DEPLOY_HOOK: '${{ secrets.VANITY_DEPLOY_HOOK }}'
-        run: |
-          curl "$VANITY_DEPLOY_HOOK"

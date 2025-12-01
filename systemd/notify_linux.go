@@ -72,7 +72,6 @@ func Watchdog(ctx context.Context) {
 	}
 }
 
-// watchdogInterval returns the watchdog interval configured in systemd unit file.
 func watchdogInterval(ctx context.Context) time.Duration {
 	s, err := strconv.Atoi(cli.GetEnv(ctx).Getenv("WATCHDOG_USEC"))
 	if err != nil {

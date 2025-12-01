@@ -2,8 +2,6 @@
 // Use of this source code is governed by the ISC
 // license that can be found in the LICENSE.md file.
 
-// vim: foldmethod=marker
-
 package main
 
 import (
@@ -27,8 +25,6 @@ const hookShellScript = `#!/bin/sh
 echo "==> Running pre-commit check..."
 go tool pre-commit
 `
-
-// Types and helpers {{{
 
 type check struct {
 	Run      []string `json:"run"`
@@ -65,12 +61,9 @@ func (c check) run() error {
 	}
 	return nil
 }
-
-// }}}
-
 func main() { cli.Main(cli.AppFunc(realMain)) }
 
-func realMain(ctx context.Context) error { // {{{
+func realMain(ctx context.Context) error {
 	internal.EnsureRoot()
 	env := cli.GetEnv(ctx)
 
@@ -128,4 +121,4 @@ func realMain(ctx context.Context) error { // {{{
 	}
 
 	return nil
-} // }}}
+}
