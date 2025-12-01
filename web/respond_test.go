@@ -20,7 +20,7 @@ import (
 	"go.astrophena.name/base/testutil"
 )
 
-func setupTestContext(t *testing.T) (context.Context, *bytes.Buffer) {
+func setupTestContext() (context.Context, *bytes.Buffer) {
 	var buf bytes.Buffer
 	level := new(slog.LevelVar)
 	level.Set(slog.LevelDebug)
@@ -77,7 +77,7 @@ func TestRespondError(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			ctx, logBuf := setupTestContext(t)
+			ctx, logBuf := setupTestContext()
 			r := httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
 
 			if tc.trusted {
@@ -167,7 +167,7 @@ func TestRespondJSONError(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			w := httptest.NewRecorder()
-			ctx, logBuf := setupTestContext(t)
+			ctx, logBuf := setupTestContext()
 			r := httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
 
 			RespondJSONError(w, r, tc.err)

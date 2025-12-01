@@ -21,7 +21,7 @@ import (
 )
 
 // readEvent is a helper to read a full SSE event from a bufio.Reader.
-// It parses the 'event' and 'data' fields and returns them.
+// It parses the event and data fields and returns them.
 func readEvent(t *testing.T, r *bufio.Reader) (event, data string) {
 	t.Helper()
 
@@ -132,7 +132,7 @@ func TestStreamer_Broadcast(t *testing.T) {
 
 			reader := bufio.NewReader(res.Body)
 			event, data := readEvent(t, reader)
-			testutil.AssertEqual(t, event, "message") // Default event from Send()
+			testutil.AssertEqual(t, event, "message")
 			testutil.AssertEqual(t, data, "broadcast message")
 		}(i)
 	}

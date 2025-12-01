@@ -25,7 +25,7 @@ func TestLogger(t *testing.T) {
 
 	ctx := context.Background()
 
-	t.Run("DefaultLogger", func(t *testing.T) {
+	t.Run("default logger", func(t *testing.T) {
 		// This will use the default logger, which discards everything.
 		// We check that it doesn't panic and that the buffer is empty.
 		buf.Reset()
@@ -37,12 +37,12 @@ func TestLogger(t *testing.T) {
 	ctx = Put(ctx, l)
 	testutil.AssertEqual(t, IsDefault(Get(ctx)), false)
 
-	t.Run("Get", func(t *testing.T) {
+	t.Run("get", func(t *testing.T) {
 		got := Get(ctx)
 		testutil.AssertEqual(t, got, l)
 	})
 
-	t.Run("LevelVar", func(t *testing.T) {
+	t.Run("level var", func(t *testing.T) {
 		got := LevelVar(ctx)
 		testutil.AssertEqual(t, got, l.Level)
 
@@ -68,7 +68,7 @@ func TestLogger(t *testing.T) {
 		got.Set(slog.LevelDebug)
 	})
 
-	t.Run("AttachAndDetach", func(t *testing.T) {
+	t.Run("attach and detach", func(t *testing.T) {
 		var buf1, buf2 bytes.Buffer
 
 		h1 := slog.NewJSONHandler(&buf1, &slog.HandlerOptions{Level: slog.LevelDebug})
@@ -115,7 +115,7 @@ func TestLogger(t *testing.T) {
 		}
 	})
 
-	t.Run("Info", func(t *testing.T) {
+	t.Run("info", func(t *testing.T) {
 		buf.Reset()
 		Info(ctx, "info message", slog.String("key", "value"))
 		if !strings.Contains(buf.String(), `"level":"INFO"`) {
@@ -129,7 +129,7 @@ func TestLogger(t *testing.T) {
 		}
 	})
 
-	t.Run("Debug", func(t *testing.T) {
+	t.Run("debug", func(t *testing.T) {
 		buf.Reset()
 		Debug(ctx, "debug message", slog.Bool("ok", true))
 		if !strings.Contains(buf.String(), `"level":"DEBUG"`) {
@@ -143,7 +143,7 @@ func TestLogger(t *testing.T) {
 		}
 	})
 
-	t.Run("Warn", func(t *testing.T) {
+	t.Run("warb", func(t *testing.T) {
 		buf.Reset()
 		Warn(ctx, "warn message", slog.Int("code", 123))
 		if !strings.Contains(buf.String(), `"level":"WARN"`) {
@@ -157,7 +157,7 @@ func TestLogger(t *testing.T) {
 		}
 	})
 
-	t.Run("Error", func(t *testing.T) {
+	t.Run("error", func(t *testing.T) {
 		buf.Reset()
 		Error(ctx, "error message", slog.Any("err", "some error"))
 		if !strings.Contains(buf.String(), `"level":"ERROR"`) {

@@ -16,8 +16,6 @@ import (
 	"go.astrophena.name/base/web"
 )
 
-// Test request and response types. {{{
-
 type testRequest struct {
 	Name  string `json:"name"`
 	Value int    `json:"value"`
@@ -37,9 +35,6 @@ type testResponse struct {
 	Success bool   `json:"success"`
 }
 
-// }}}
-
-// Test logic function for various scenarios.
 func testLogic(r *http.Request, req testRequest) (testResponse, error) {
 	switch req.Name {
 	case "error":
@@ -63,31 +58,31 @@ func TestHandleJSON(t *testing.T) {
 		wantStatusCode int
 		wantInBody     string
 	}{
-		"Successful POST": {
+		"successful POST": {
 			method:         http.MethodPost,
 			body:           `{"name": "test", "value": 123}`,
 			wantStatusCode: http.StatusOK,
 			wantInBody:     `"message": "Received: test with value 123"`,
 		},
-		"Invalid JSON": {
+		"invalid JSON": {
 			method:         http.MethodPost,
 			body:           `{"name": "test", "value": 123`,
 			wantStatusCode: http.StatusBadRequest,
 			wantInBody:     `"error": "bad request: failed to decode request body`,
 		},
-		"Empty Body": {
+		"empty body": {
 			method:         http.MethodPost,
 			body:           ``,
 			wantStatusCode: http.StatusBadRequest,
 			wantInBody:     `"error": "bad request: request body is required"`,
 		},
-		"Validation Error": {
+		"validation error": {
 			method:         http.MethodPost,
 			body:           `{"value": 456}`,
 			wantStatusCode: http.StatusBadRequest,
 			wantInBody:     `"error": "bad request: validation failed: name is required"`,
 		},
-		"Logic Error": {
+		"logic error": {
 			method:         http.MethodPost,
 			body:           `{"name": "error"}`,
 			wantStatusCode: http.StatusNotFound,

@@ -44,8 +44,6 @@ type Params struct {
 }
 
 // DefaultClient is the default [http.Client] used by [Make].
-//
-// It has a timeout of 10 seconds to prevent requests from hanging indefinitely.
 var DefaultClient = &http.Client{
 	Timeout: 10 * time.Second,
 }
