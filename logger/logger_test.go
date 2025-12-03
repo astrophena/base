@@ -64,7 +64,7 @@ func TestLogger(t *testing.T) {
 			t.Fatal("expected log message for info, but buffer is empty")
 		}
 
-		// Reset for other tests
+		// Reset for other tests.
 		got.Set(slog.LevelDebug)
 	})
 

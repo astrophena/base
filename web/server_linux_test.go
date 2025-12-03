@@ -79,10 +79,9 @@ func TestServerSocketActivation(t *testing.T) {
 		}
 	}()
 
-	// Give server time to start
+	// Give server time to start.
 	time.Sleep(100 * time.Millisecond)
 
-	// Make request
 	resp, err := http.Get("http://" + listenerAddr.String() + "/test")
 	if err != nil {
 		t.Fatalf("http.Get: %v", err)

@@ -76,8 +76,7 @@ func RunGolden(t *testing.T, glob string, f func(t *testing.T, match string) []b
 }
 
 // MockHTTPClient returns an [http.Client] that directs all requests to the
-// provided [http.Handler], allowing to test HTTP clients without making
-// real network requests.
+// provided [http.Handler].
 func MockHTTPClient(h http.Handler) *http.Client {
 	return &http.Client{
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {

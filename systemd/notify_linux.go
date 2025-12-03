@@ -19,6 +19,7 @@ import (
 )
 
 // Notify sends a message to systemd using the sd_notify protocol.
+//
 // See https://www.freedesktop.org/software/systemd/man/sd_notify.html.
 func Notify(ctx context.Context, state State) {
 	addr := &net.UnixAddr{
@@ -45,6 +46,7 @@ func Notify(ctx context.Context, state State) {
 var watchdogStarted atomic.Bool
 
 // Watchdog starts a systemd watchdog timer in a separate goroutine that is stopped when the context is canceled.
+//
 // When the watchdog is not enabled for the service, it does nothing.
 func Watchdog(ctx context.Context) {
 	// Don't start the watchdog if it's already started.

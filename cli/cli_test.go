@@ -2,8 +2,6 @@
 // Use of this source code is governed by the ISC
 // license that can be found in the LICENSE.md file.
 
-// vim: foldmethod=marker
-
 package cli_test
 
 import (
@@ -22,7 +20,6 @@ import (
 	"go.astrophena.name/base/version"
 )
 
-// runTest is a helper to execute a cli.App in a controlled environment.
 func runTest(t *testing.T, app cli.App, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
 
@@ -40,8 +37,6 @@ func runTest(t *testing.T, app cli.App, args ...string) (stdout, stderr string, 
 
 	return out.String(), errb.String(), runErr
 }
-
-// App stubs for testing {{{
 
 // simpleApp prints its args to stdout.
 type simpleApp struct{}
@@ -103,8 +98,6 @@ func (a *appWithVersionFlag) Run(ctx context.Context) error {
 	}
 	return nil
 }
-
-// }}}
 
 func TestRun(t *testing.T) {
 	t.Run("simple", func(t *testing.T) {

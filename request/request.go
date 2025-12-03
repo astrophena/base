@@ -28,9 +28,11 @@ type Params struct {
 	Headers map[string]string
 	// Body is any data to be sent in the request body. It will be marshaled to
 	// JSON or:
+	//
 	//   - If it's type is url.Values, as query string with Content-Type
 	//     header set to "application/x-www-form-urlencoded".
 	//   - If it's type is []byte, as raw bytes with no Content-Type header.
+	//
 	Body any
 	// WantStatusCode is the expected HTTP status code for the response.
 	// If not provided, http.StatusOK (200) will be used.

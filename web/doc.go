@@ -5,11 +5,6 @@
 /*
 Package web provides a collection of functions and types for building web services.
 
-It includes a configurable HTTP server that simplifies common tasks like setting
-up middleware, serving static files with cache-busting, and graceful shutdown.
-The package also offers helpers for standardized JSON and HTML responses,
-including error handling.
-
 # Key types and functions
 
   - [web.Server]: A configurable HTTP server with support for middleware,

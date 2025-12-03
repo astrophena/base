@@ -339,13 +339,6 @@ header a {
   text-decoration: none;
 }
 
-/* Avatar in a header. */
-.avatar {
-  vertical-align: text-bottom;
-  width: 40px;
-  height: 40px;
-}
-
 /* Alert box. */
 .alert {
   background-color: #871f22;
@@ -364,14 +357,4 @@ header a {
 /* Make headings overflow. */
 h1 {
   overflow: auto;
-}
-
-/* Vanity import styles. */
-
-span.module {
-  border: .0625rem solid var(--border);
-  color: var(--text);
-  font-size: .75rem;
-  padding: .125rem .625rem;
-  vertical-align: middle;
 }

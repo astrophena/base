@@ -34,10 +34,8 @@ func IsTrustedRequest(r *http.Request) bool {
 	return ok
 }
 
-// TrustRequest marks r as a trusted request and returns a new request
+// TrustRequest marks r as a trusted request (see [IsTrustedRequest]) and returns a new request
 // with the trusted status embedded in its context.
-// This function should typically be used for requests originating from
-// service administrators or other privileged users.
 func TrustRequest(r *http.Request) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), trustedRequestKey, trustedRequest{}))
 }
@@ -45,26 +43,18 @@ func TrustRequest(r *http.Request) *http.Request {
 // StatusErr is a sentinel error type used to represent HTTP status code errors.
 type StatusErr int
 
-// Error implements the error interface.
-// It returns a lowercase representation of the HTTP status text for the wrapped code.
+// Error implements the [error] interface.
 func (se StatusErr) Error() string { return strings.ToLower(http.StatusText(int(se))) }
 
 const (
-	// ErrBadRequest represents a bad request error (HTTP 400).
-	ErrBadRequest StatusErr = http.StatusBadRequest
-	// ErrUnauthorized represents an unauthorized access error (HTTP 401).
-	ErrUnauthorized StatusErr = http.StatusUnauthorized
-	// ErrForbidden represents a forbidden access error (HTTP 403).
-	ErrForbidden StatusErr = http.StatusForbidden
-	// ErrNotFound represents a not found error (HTTP 404).
-	ErrNotFound StatusErr = http.StatusNotFound
-	// ErrMethodNotAllowed represents a method not allowed error (HTTP 405).
-	ErrMethodNotAllowed StatusErr = http.StatusMethodNotAllowed
-	// ErrInternalServerError represents an internal server error (HTTP 500).
-	ErrInternalServerError StatusErr = http.StatusInternalServerError
+	ErrBadRequest          StatusErr = http.StatusBadRequest          // 400
+	ErrUnauthorized        StatusErr = http.StatusUnauthorized        // 401
+	ErrForbidden           StatusErr = http.StatusForbidden           // 403
+	ErrNotFound            StatusErr = http.StatusNotFound            // 404
+	ErrMethodNotAllowed    StatusErr = http.StatusMethodNotAllowed    // 405
+	ErrInternalServerError StatusErr = http.StatusInternalServerError // 500
 )
 
-// errorResponse is a struct used to represent an error response in JSON format.
 type errorResponse struct {
 	Status string `json:"status"`
 	Error  string `json:"error"`
@@ -109,8 +99,7 @@ var (
 // status code to [http.StatusInternalServerError].
 //
 // If the request is marked as trusted (see [IsTrustedRequest] and [TrustRequest]),
-// the original error message will be included in the HTML response. This is
-// useful for debugging by service administrators.
+// the original error message will be included in the HTML response.
 //
 // You can wrap any error with [fmt.Errorf] to create a [StatusErr] and set a
 // specific HTTP status code:

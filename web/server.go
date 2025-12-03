@@ -7,6 +7,7 @@ package web
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
 	"embed"
 	"errors"
 	"fmt"
@@ -44,8 +45,12 @@ type Server struct {
 	// Middleware specifies an optional slice of HTTP middleware that's applied to
 	// each request.
 	Middleware []Middleware
-	// Addr is a network address to listen on. For TCP, use "host:port". For a
-	// Unix socket, use an absolute file path (e.g., "/run/service/socket").
+	// Addr is a network address to listen on.
+	//
+	// For TCP, use "host:port".
+	//
+	// For a Unix socket, use an absolute file path (e.g., "/run/service/socket").
+	//
 	// To use systemd socket activation, use "sd-socket:<name>", where <name> is
 	// the name of the socket defined in the systemd socket unit.
 	Addr string
@@ -140,7 +145,7 @@ func (s *Server) logRequest(next http.Handler) http.Handler {
 			slog.String("host", r.Host),
 		)
 		ctx := logger.Put(r.Context(), &logger.Logger{
-			Logger: sl,
+			Logger: sl.With("request_id", rand.Text()),
 			Level:  l.Level,
 		})
 		r = r.WithContext(ctx)
@@ -219,7 +224,9 @@ func (s *Server) initHandler() *handler {
 
 	// Initialize internal routes.
 	s.Mux.Handle("GET /static/", hashfs.FileServer(h.static))
-	s.Mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) { RespondJSON(w, version.Version()) })
+	s.Mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
+		RespondJSON(w, version.Version())
+	})
 	Health(s.Mux)
 	if s.Debuggable {
 		Debugger(s.Mux)
@@ -270,8 +277,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	var l net.Listener
 	var err error
 
-	if strings.HasPrefix(s.Addr, "sd-socket:") {
-		name := strings.TrimPrefix(s.Addr, "sd-socket:")
+	if after, ok := strings.CutPrefix(s.Addr, "sd-socket:"); ok {
+		name := after
 		if name == "" {
 			return errors.New("web: socket activation address is missing name (e.g., sd-socket:name)")
 		}
@@ -296,11 +303,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		}
 		scheme, host := "http", l.Addr().String()
 		if network == "unix" {
-			// Set socket permissions.
 			if err := os.Chmod(s.Addr, 0o666); err != nil {
 				return fmt.Errorf("%w: failed to set socket permissions: %v", errListen, err)
 			}
-
 			scheme = "unix"
 		}
 		logger.Info(ctx, "listening for HTTP requests", slog.String("addr", fmt.Sprintf("%s://%s", scheme, host)))

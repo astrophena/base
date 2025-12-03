@@ -87,8 +87,7 @@ func (lwg *LimitedWaitGroup) Add(delta int) {
 	}
 }
 
-// Done decrements the counter of the [LimitedWaitGroup] by one and releases a
-// slot, allowing another goroutine to start.
+// Done decrements the counter of the [LimitedWaitGroup].
 func (lwg *LimitedWaitGroup) Done() {
 	<-lwg.workers
 	lwg.wg.Done()

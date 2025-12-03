@@ -92,8 +92,9 @@ func (h *multiHandler) Detach(handler slog.Handler) {
 }
 
 // Logger encapsulates an [slog.Logger] and allows attaching and detaching
-// [slog.Handler] at runtime. It also holds a [slog.LevelVar] that can be
-// used to control the level of handlers that are created with it.
+// multiple [slog.Handler] at runtime.
+//
+// It also holds a [slog.LevelVar] that can be used to control the level of handlers that are created with it.
 type Logger struct {
 	*slog.Logger
 	Level   *slog.LevelVar
@@ -139,6 +140,7 @@ func Put(ctx context.Context, l *Logger) context.Context {
 }
 
 // Get retrieves the [Logger] from the context.
+//
 // If the context has no [Logger], it returns a default [Logger] that discards all
 // messages.
 func Get(ctx context.Context) *Logger {
@@ -152,6 +154,7 @@ func Get(ctx context.Context) *Logger {
 func IsDefault(l *Logger) bool { return l == defaultLogger }
 
 // LevelVar retrieves the [slog.LevelVar] associated with the [Logger] in the context.
+//
 // If the context has no [Logger], it returns a [slog.LevelVar] for a default
 // [Logger].
 func LevelVar(ctx context.Context) *slog.LevelVar {
