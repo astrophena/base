@@ -102,7 +102,7 @@ func Debugger(mux *http.ServeMux) *DebugHandler {
 	if err == nil {
 		ret.KV("Machine", hostname)
 	}
-	ret.KVFunc("Uptime", uptime)
+	ret.KVFunc("Uptime", func() any { return uptime() })
 	ret.Handle("pprof/", "pprof", http.HandlerFunc(pprof.Index))
 	ret.Link("/debug/pprof/goroutine?debug=1", "Goroutines (collapsed)")
 	ret.Link("/debug/pprof/goroutine?debug=2", "Goroutines (full)")
@@ -127,7 +127,7 @@ func serveGC(w http.ResponseWriter, r *http.Request) {
 
 var timeStart = time.Now()
 
-func uptime() any { return time.Since(timeStart).Round(time.Second) }
+func uptime() time.Duration { return time.Since(timeStart).Round(time.Second) }
 
 // ServeHTTP implements the [http.Handler] interface.
 func (d *DebugHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -269,7 +269,7 @@ func (d *DebugHandler) handleDiscovery(w http.ResponseWriter, r *http.Request) {
 	runtime.ReadMemStats(&mem)
 
 	stats := RuntimeStats{
-		Uptime:        uptime().(time.Duration).String(),
+		Uptime:        uptime().String(),
 		NumGoroutines: runtime.NumGoroutine(),
 	}
 	stats.Memory.Alloc = mem.Alloc / 1024 / 1024

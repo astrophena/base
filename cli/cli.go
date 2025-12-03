@@ -2,7 +2,67 @@
 // Use of this source code is governed by the ISC
 // license that can be found in the LICENSE.md file.
 
-// Package cli provides helpers for creating simple command-line applications.
+// Package cli provides a framework for creating simple command-line applications.
+//
+// To create a CLI application, implement the [App] interface or use [AppFunc] for simple
+// one-off commands. Then, pass an instance of your app to [Main] in your main function.
+//
+//	package main
+//
+//	import (
+//		"context"
+//		"flag"
+//		"log/slog"
+//
+//		"go.astrophena.name/base/cli"
+//		"go.astrophena.name/base/logger"
+//	)
+//
+//	func main() {
+//		cli.Main(new(myApp))
+//	}
+//
+//	type myApp struct {
+//		name string
+//	}
+//
+//	func (a *myApp) Flags(fs *flag.FlagSet) {
+//		fs.StringVar(&a.name, "name", "World", "Name to greet.")
+//	}
+//
+//	func (a *myApp) Run(ctx context.Context) error {
+//		logger.Info(ctx, "Hello", slog.String("name", a.name))
+//		return nil
+//	}
+//
+// # Documentation
+//
+// By creating a specific doc.go file, you can use the same text for both your Go package documentation
+// (visible via "go doc") and your CLI help message (visible via "-help").
+//
+// Create a file named doc.go in your main package:
+//
+//	// Copyright ...
+//
+//	/*
+//	Mytool does something useful.
+//
+//	It has several features...
+//	*/
+//	package main
+//
+//	import (
+//		_ "embed"
+//
+//		"go.astrophena.name/base/cli"
+//	)
+//
+//	//go:embed doc.go
+//	var doc []byte
+//
+//	func init() { cli.SetDocComment(doc) }
+//
+// The comment must be enclosed in "/*" and "*/" markers, each on their own line.
 package cli
 
 import (
@@ -265,16 +325,7 @@ var (
 	doc    syncx.Lazy[string]
 )
 
-// SetDocComment sets the main documentation for the application, which is
-// displayed when a user passes the -help flag. It is intended to be used with
-// Go's //go:embed directive.
-//
-// Example:
-//
-//	//go:embed doc.go
-//	var doc []byte
-//
-//	func init() { cli.SetDocComment(doc) }
+// SetDocComment sets the application's documentation, displayed in the help message.
 func SetDocComment(src []byte) { docSrc = src }
 
 func parseDocComment() string {
