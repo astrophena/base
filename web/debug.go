@@ -33,16 +33,16 @@ var debugTemplate string
 // DebugHandler is an [http.Handler] that serves a debugging "homepage", and
 // provides helpers to register more debug endpoints and reports.
 //
-// The rendered page consists of three sections: header menu, informational
-// key/value pairs and links to other pages.
+// The rendered page consists of three sections: header menu, links to other
+// pages and informational key/value pairs.
 //
-// Callers can add to these sections using the MenuFunc, KV and Link helpers
-// respectively.
+// Callers can add to these sections using the [DebugHandler.MenuFunc],
+// [DebugHandler.KV] and [DebugHandler.Link] helpers respectively.
 //
-// Additionally, the Handle method offers a shorthand for correctly registering
-// debug handlers and cross-linking them from /debug/.
+// Additionally, the [DebugHandler.Handle] method offers a shorthand for
+// correctly registering debug handlers and cross-linking them from /debug/.
 //
-// Methods of DebugHandler can be safely called by multiple goroutines.
+// Methods of [DebugHandler] can be safely called by multiple goroutines.
 type DebugHandler struct {
 	mux      *http.ServeMux                 // where this handler is registered
 	mu       sync.RWMutex                   // covers all fields below, mux is protected by it's own mutex

@@ -83,7 +83,7 @@ func (e *StatusError) Error() string {
 //   - Otherwise, the response body is expected to be JSON and is unmarshaled into a variable of type Response.
 //
 // It returns the parsed response of type Response and an error if the request fails or parsing fails.
-// For non-200 status codes, it returns an error containing the status code and response body.
+// For non-200 status codes, it returns an instance of [StatusError].
 func Make[Response any](ctx context.Context, p Params) (Response, error) {
 	var resp Response
 
