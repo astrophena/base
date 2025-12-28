@@ -9,56 +9,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"log"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
 	"go.astrophena.name/base/request"
-	"go.astrophena.name/base/web"
 )
-
-func ExampleMake() {
-	health, err := request.Make[web.HealthResponse](context.Background(), request.Params{
-		URL: "https://bot.astrophena.name/health",
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	if health.OK {
-		log.Println("Healthy.")
-	} else {
-		log.Printf("Not healthy: %+v", health)
-	}
-}
-
-func ExampleMake_scrub() {
-	// Sending a request to the GitHub API. The token will be scrubbed from error messages.
-	user, err := request.Make[map[string]any](context.Background(), request.Params{
-		URL: "https://api.github.com/user",
-		Headers: map[string]string{
-			"Authorization": "Bearer " + os.Getenv("GITHUB_TOKEN"),
-		},
-		Scrubber: strings.NewReplacer(os.Getenv("GITHUB_TOKEN"), "[EXPUNGED]"),
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println(user["login"])
-}
-
-func ExampleMake_bytes() {
-	b, err := request.Make[request.Bytes](context.Background(), request.Params{
-		URL: "https://astrophena.name",
-	})
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("Response body: %s", b)
-}
 
 func TestMake(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

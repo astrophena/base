@@ -20,8 +20,6 @@ import (
 	"go.astrophena.name/base/testutil"
 )
 
-// readEvent is a helper to read a full SSE event from a bufio.Reader.
-// It parses the event and data fields and returns them.
 func readEvent(t *testing.T, r *bufio.Reader) (event, data string) {
 	t.Helper()
 
@@ -68,7 +66,7 @@ func TestStreamer_ServeHTTP_Headers(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	// Use a cancellable context to immediately terminate the handler.
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	req = req.WithContext(ctx)
 
