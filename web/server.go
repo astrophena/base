@@ -23,7 +23,6 @@ import (
 	"go.astrophena.name/base/logger"
 	"go.astrophena.name/base/syncx"
 	"go.astrophena.name/base/systemd"
-	"go.astrophena.name/base/version"
 	"go.astrophena.name/base/web/internal/hashfs"
 	"go.astrophena.name/base/web/internal/unionfs"
 )
@@ -42,15 +41,12 @@ type Server struct {
 	Mux *http.ServeMux
 	// Debuggable specifies whether to register debug handlers at /debug/.
 	Debuggable bool
-	// Middleware specifies an optional slice of HTTP middleware that's applied to
+	// Middleware specifies an optional HTTP middleware that's applied to
 	// each request.
 	Middleware []Middleware
 	// Addr is a network address to listen on.
-	//
 	// For TCP, use "host:port".
-	//
 	// For a Unix socket, use an absolute file path (e.g., "/run/service/socket").
-	//
 	// To use systemd socket activation, use "sd-socket:<name>", where <name> is
 	// the name of the socket defined in the systemd socket unit.
 	Addr string
@@ -222,12 +218,7 @@ func (s *Server) initHandler() *handler {
 	static = append(static, staticFS)
 	h.static = hashfs.NewFS(static)
 
-	// Initialize internal routes.
 	s.Mux.Handle("GET /static/", hashfs.FileServer(h.static))
-	s.Mux.HandleFunc("GET /version", func(w http.ResponseWriter, r *http.Request) {
-		RespondJSON(w, version.Version())
-	})
-	Health(s.Mux)
 	if s.Debuggable {
 		Debugger(s.Mux)
 	}

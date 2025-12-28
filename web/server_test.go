@@ -111,8 +111,6 @@ func TestServerListenAndServe(t *testing.T) {
 	}{
 		{url: "/static/css/main.css", wantStatus: http.StatusOK},
 		{url: "/" + s.StaticHashName("static/css/main.css"), wantStatus: http.StatusOK},
-		{url: "/health", wantStatus: http.StatusOK},
-		{url: "/version", wantStatus: http.StatusOK},
 	}
 
 	for _, u := range urls {
@@ -146,9 +144,6 @@ func TestServerListenAndServe(t *testing.T) {
 	}
 	if !strings.Contains(logOutput, `"msg":"handled request"`) {
 		t.Error("expected 'handled request' message in logs")
-	}
-	if !strings.Contains(logOutput, `"url":"/health"`) {
-		t.Error("expected '/health' URL in logs")
 	}
 	if !strings.Contains(logOutput, `"status":200`) {
 		t.Error("expected status 200 in logs")
