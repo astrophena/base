@@ -331,7 +331,7 @@ func SetDocComment(src []byte) { docSrc = src }
 func parseDocComment() string {
 	s := bufio.NewScanner(bytes.NewReader(docSrc))
 	var (
-		doc       string
+		doc       strings.Builder
 		inComment bool
 	)
 	for s.Scan() {
@@ -345,11 +345,11 @@ func parseDocComment() string {
 			break
 		}
 		if inComment {
-			doc += line + "\n"
+			doc.WriteString(line + "\n")
 		}
 	}
 	if err := s.Err(); err != nil {
 		panic(err)
 	}
-	return doc
+	return doc.String()
 }
