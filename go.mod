@@ -5,7 +5,7 @@ go 1.25.1
 require (
 	github.com/go4org/hashtriemap v0.0.0-20251130024219-545ba229f689
 	github.com/lmittmann/tint v1.1.2
-	golang.org/x/term v0.38.0
+	golang.org/x/term v0.39.0
 )
 
 require (
@@ -13,7 +13,7 @@ require (
 	golang.org/x/exp/typeparams v0.0.0-20251219203646-944ab1f22d93 // indirect
 	golang.org/x/mod v0.31.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
-	golang.org/x/sys v0.39.0 // indirect
+	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/tools v0.40.0 // indirect
 	golang.org/x/tools/go/expect v0.1.1-deprecated // indirect
 	honnef.co/go/tools v0.6.1 // indirect
