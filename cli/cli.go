@@ -75,6 +75,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"os/signal"
 	"runtime"
 	"runtime/pprof"
@@ -252,7 +253,7 @@ func Run(ctx context.Context, app App) error {
 		flags.Var(logLevelFlag{logger.LevelVar(ctx)}, "log-level", "Log level (debug, info, warn, error).")
 	}
 
-	flags.Usage = usage(flags, env.Stderr)
+	flags.Usage = usage(flags, env)
 	flags.SetOutput(env.Stderr)
 	if err := flags.Parse(env.Args); err != nil {
 		// Already printed to stderr by flag package, so mark as an unprintable error.
@@ -301,7 +302,7 @@ func newLogger(w io.Writer, level *slog.LevelVar) *logger.Logger {
 	opts := &tint.Options{Level: l.Level, TimeFormat: time.Kitchen}
 
 	var handler slog.Handler
-	if f, ok := w.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+	if f, ok := w.(*os.File); ok && IsTerminal(int(f.Fd())) {
 		handler = tint.NewHandler(w, opts)
 	} else {
 		handler = slog.NewJSONHandler(w, &slog.HandlerOptions{Level: l.Level})
@@ -310,13 +311,47 @@ func newLogger(w io.Writer, level *slog.LevelVar) *logger.Logger {
 	return l
 }
 
-func usage(flags *flag.FlagSet, stderr io.Writer) func() {
+// IsTerminal reports whether the file descriptor is connected to a terminal.
+// It's a variable so that it can be mocked in tests.
+var IsTerminal = term.IsTerminal
+
+func usage(flags *flag.FlagSet, env *Env) func() {
 	return func() {
+		var b bytes.Buffer
 		if docSrc != nil {
-			fmt.Fprintf(stderr, "%s\n", doc.Get(parseDocComment))
+			fmt.Fprintf(&b, "%s\n", doc.Get(parseDocComment))
 		}
-		fmt.Fprint(stderr, "Available flags:\n\n")
+		fmt.Fprint(&b, "Available flags:\n\n")
+
+		oldOutput := flags.Output()
+		flags.SetOutput(&b)
 		flags.PrintDefaults()
+		flags.SetOutput(oldOutput)
+
+		fmt.Fprint(&b, "\nTo disable the pager, set the NO_PAGER environment variable.\n")
+
+		if f, ok := env.Stderr.(*os.File); ok && IsTerminal(int(f.Fd())) && env.Getenv("NO_PAGER") == "" {
+			pager := env.Getenv("PAGER")
+			if pager == "" {
+				if path, err := exec.LookPath("less"); err == nil {
+					pager = path
+				} else if path, err := exec.LookPath("more"); err == nil {
+					pager = path
+				}
+			}
+
+			if pager != "" {
+				cmd := exec.Command(pager)
+				cmd.Stdin = &b
+				cmd.Stdout = f
+				cmd.Stderr = f
+				if err := cmd.Run(); err == nil {
+					return
+				}
+			}
+		}
+
+		b.WriteTo(env.Stderr)
 	}
 }
 

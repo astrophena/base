@@ -10,9 +10,11 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"go.astrophena.name/base/cli"
@@ -172,6 +174,9 @@ func TestRun(t *testing.T) {
 		if !strings.Contains(stderr, "Available flags:") {
 			t.Errorf("stderr must contain 'Available flags:', got: %q", stderr)
 		}
+		if !strings.Contains(stderr, "To disable the pager, set the NO_PAGER environment variable.") {
+			t.Errorf("stderr must contain NO_PAGER documentation, got: %q", stderr)
+		}
 	})
 
 	t.Run("doc comment", func(t *testing.T) {
@@ -223,5 +228,74 @@ func TestRun(t *testing.T) {
 				t.Errorf("error must be about creating cpu profile, got: %v", err)
 			}
 		})
+	})
+}
+
+func TestPager(t *testing.T) {
+	oldIsTerminal := cli.IsTerminal
+	cli.IsTerminal = func(fd int) bool { return true }
+	t.Cleanup(func() { cli.IsTerminal = oldIsTerminal })
+
+	runWithTerminal := func(t *testing.T, envVars map[string]string, args ...string) (stdout, stderr string, err error) {
+		t.Helper()
+
+		r, w, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		var out bytes.Buffer
+		env := &cli.Env{
+			Args:   args,
+			Stdin:  strings.NewReader(""),
+			Stdout: &out,
+			Stderr: w,
+			Getenv: func(s string) string {
+				if v, ok := envVars[s]; ok {
+					return v
+				}
+				return ""
+			},
+		}
+		ctx := cli.WithEnv(context.Background(), env)
+
+		var stderrBytes []byte
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			stderrBytes, _ = io.ReadAll(r)
+		}()
+
+		runErr := cli.Run(ctx, &simpleApp{})
+		w.Close() // Close writer to unblock ReadAll
+		wg.Wait()
+		r.Close()
+
+		return out.String(), string(stderrBytes), runErr
+	}
+
+	t.Run("pager is used", func(t *testing.T) {
+		env := map[string]string{"PAGER": "true"}
+		_, stderr, err := runWithTerminal(t, env, "-h")
+
+		if !errors.Is(err, flag.ErrHelp) {
+			t.Fatalf("expected ErrHelp, got %v", err)
+		}
+		if stderr != "" {
+			t.Errorf("expected empty stderr because pager should have captured output, got: %q", stderr)
+		}
+	})
+
+	t.Run("NO_PAGER disables pager", func(t *testing.T) {
+		env := map[string]string{"PAGER": "true", "NO_PAGER": "1"}
+		_, stderr, err := runWithTerminal(t, env, "-h")
+
+		if !errors.Is(err, flag.ErrHelp) {
+			t.Fatalf("expected ErrHelp, got %v", err)
+		}
+		if !strings.Contains(stderr, "Available flags:") {
+			t.Errorf("expected help output on stderr, but it was not found. Stderr: %q", stderr)
+		}
 	})
 }
