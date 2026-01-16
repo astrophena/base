@@ -19,6 +19,8 @@ import (
 	"go.astrophena.name/base/cli"
 	"go.astrophena.name/base/devtools/internal"
 	"go.astrophena.name/base/txtar"
+
+	"golang.org/x/term"
 )
 
 const hookShellScript = `#!/bin/sh
@@ -83,6 +85,16 @@ func realMain(ctx context.Context) error {
 		}
 	}
 
+	var termWidth int
+	if !isCI {
+		if f, ok := env.Stdout.(*os.File); ok && term.IsTerminal(int(f.Fd())) {
+			w, _, err := term.GetSize(int(f.Fd()))
+			if err == nil {
+				termWidth = w
+			}
+		}
+	}
+
 	var checksToRun []check
 	for _, c := range checks {
 		if isCI && c.SkipInCI {
@@ -96,7 +108,26 @@ func realMain(ctx context.Context) error {
 
 	totalChecks := len(checksToRun)
 	for i, c := range checksToRun {
-		progressMsg := fmt.Sprintf("[%d/%d] Running check\t%s", i+1, totalChecks, strings.Join(c.Run, " "))
+		prefix := fmt.Sprintf("[%d/%d] Running check\t", i+1, totalChecks)
+		commandStr := strings.Join(c.Run, " ")
+
+		if termWidth > 0 {
+			available := termWidth - len(prefix)
+			if len(commandStr) > available {
+				if available <= 3 { // Not enough space for ellipsis.
+					if available > 0 {
+						commandStr = commandStr[:available]
+					} else {
+						commandStr = ""
+					}
+				} else {
+					commandStr = commandStr[:available-3] + "..."
+				}
+			}
+		}
+
+		progressMsg := prefix + commandStr
+
 		if isCI {
 			fmt.Fprintln(env.Stdout, progressMsg)
 		} else {
