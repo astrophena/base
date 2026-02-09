@@ -4,7 +4,7 @@ go 1.25.1
 
 require (
 	github.com/go4org/hashtriemap v0.0.0-20251130024219-545ba229f689
-	github.com/lmittmann/tint v1.1.2
+	github.com/lmittmann/tint v1.1.3
 	golang.org/x/term v0.39.0
 )
 
