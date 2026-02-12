@@ -1,6 +1,6 @@
 module go.astrophena.name/base
 
-go 1.25.1
+go 1.26.0
 
 require (
 	github.com/go4org/hashtriemap v0.0.0-20251130024219-545ba229f689

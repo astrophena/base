@@ -261,11 +261,9 @@ func TestPager(t *testing.T) {
 
 		var stderrBytes []byte
 		var wg sync.WaitGroup
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			stderrBytes, _ = io.ReadAll(r)
-		}()
+		})
 
 		runErr := cli.Run(ctx, &simpleApp{})
 		w.Close() // Close writer to unblock ReadAll
