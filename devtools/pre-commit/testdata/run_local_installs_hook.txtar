@@ -1,0 +1,11 @@
+-- .git/HEAD --
+ref: refs/heads/main
+-- .git/hooks/.keep --
+
+-- pre-commit.json --
+[
+  {"run": ["sh", "-c", "exit 0"]},
+  {"run": ["sh", "-c", "exit 0"], "only_in_ci": true}
+]
+-- case.json --
+{"ci":"","want_stdout":"\r\u001b[K[1/1] Running check sh -c exit 0\r\u001b[K[1/1] All checks passed.\n","want_hook":"#!/bin/sh\necho \"==> Running pre-commit check...\"\ngo tool pre-commit\n"}

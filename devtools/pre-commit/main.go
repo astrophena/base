@@ -63,6 +63,28 @@ func (c check) run() error {
 	}
 	return nil
 }
+
+func progressMessage(current, total int, command []string, terminalWidth int) string {
+	prefix := fmt.Sprintf("[%d/%d] Running check ", current, total)
+	commandStr := strings.Join(command, " ")
+
+	if terminalWidth > 0 {
+		available := terminalWidth - len(prefix)
+		if len(commandStr) > available {
+			switch {
+			case available <= 0:
+				commandStr = ""
+			case available <= 3:
+				commandStr = commandStr[:available]
+			default:
+				commandStr = commandStr[:available-3] + "..."
+			}
+		}
+	}
+
+	return prefix + commandStr
+}
+
 func main() { cli.Main(cli.AppFunc(realMain)) }
 
 func realMain(ctx context.Context) error {
@@ -108,25 +130,7 @@ func realMain(ctx context.Context) error {
 
 	totalChecks := len(checksToRun)
 	for i, c := range checksToRun {
-		prefix := fmt.Sprintf("[%d/%d] Running check\t", i+1, totalChecks)
-		commandStr := strings.Join(c.Run, " ")
-
-		if termWidth > 0 {
-			available := termWidth - len(prefix)
-			if len(commandStr) > available {
-				if available <= 3 { // Not enough space for ellipsis.
-					if available > 0 {
-						commandStr = commandStr[:available]
-					} else {
-						commandStr = ""
-					}
-				} else {
-					commandStr = commandStr[:available-3] + "..."
-				}
-			}
-		}
-
-		progressMsg := prefix + commandStr
+		progressMsg := progressMessage(i+1, totalChecks, c.Run, termWidth)
 
 		if isCI {
 			fmt.Fprintln(env.Stdout, progressMsg)

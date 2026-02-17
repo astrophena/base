@@ -1,0 +1,12 @@
+-- .git/HEAD --
+ref: refs/heads/main
+-- .git/hooks/.keep --
+
+-- pre-commit.json --
+[
+  {"run": ["sh", "-c", "exit 0"]},
+  {"run": ["sh", "-c", "exit 0"], "skip_in_ci": true},
+  {"run": ["sh", "-c", "exit 0"], "only_in_ci": true}
+]
+-- case.json --
+{"ci":"true","want_stdout":"[1/2] Running check sh -c exit 0\n[2/2] Running check sh -c exit 0\n[2/2] All checks passed.\n"}
