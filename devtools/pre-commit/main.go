@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"unicode/utf8"
 
 	"go.astrophena.name/base/cli"
 	"go.astrophena.name/base/devtools/internal"
@@ -63,6 +64,28 @@ func (c check) run() error {
 	}
 	return nil
 }
+
+func clipCommand(termWidth int, prefix, command string) string {
+	if termWidth <= 0 {
+		return command
+	}
+
+	available := termWidth - utf8.RuneCountInString(prefix)
+	if available <= 0 {
+		return ""
+	}
+
+	if utf8.RuneCountInString(command) <= available {
+		return command
+	}
+
+	if available <= 3 {
+		return string([]rune(command)[:available])
+	}
+
+	return string([]rune(command)[:available-3]) + "..."
+}
+
 func main() { cli.Main(cli.AppFunc(realMain)) }
 
 func realMain(ctx context.Context) error {
@@ -108,23 +131,8 @@ func realMain(ctx context.Context) error {
 
 	totalChecks := len(checksToRun)
 	for i, c := range checksToRun {
-		prefix := fmt.Sprintf("[%d/%d] Running check\t", i+1, totalChecks)
-		commandStr := strings.Join(c.Run, " ")
-
-		if termWidth > 0 {
-			available := termWidth - len(prefix)
-			if len(commandStr) > available {
-				if available <= 3 { // Not enough space for ellipsis.
-					if available > 0 {
-						commandStr = commandStr[:available]
-					} else {
-						commandStr = ""
-					}
-				} else {
-					commandStr = commandStr[:available-3] + "..."
-				}
-			}
-		}
+		prefix := fmt.Sprintf("[%d/%d] Running check ", i+1, totalChecks)
+		commandStr := clipCommand(termWidth, prefix, strings.Join(c.Run, " "))
 
 		progressMsg := prefix + commandStr
 
