@@ -12,8 +12,6 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
-
-	"go.astrophena.name/base/web"
 )
 
 const clientChanBuf = 16
@@ -34,13 +32,13 @@ func NewStreamer() *Streamer {
 
 // ErrStreamingUnsupported is returned when SSE is unsupported for the HTTP
 // connection.
-var ErrStreamingUnsupported = errors.New("streaming unsupported")
+var ErrStreamingUnsupported = errors.New("streaming unsupported: http.ResponseWriter does not implement http.Flusher")
 
 // ServeHTTP implements the [http.Handler] interface.
 func (s *Streamer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		web.RespondError(w, r, ErrStreamingUnsupported)
+		http.Error(w, ErrStreamingUnsupported.Error(), http.StatusNotImplemented)
 		return
 	}
 
