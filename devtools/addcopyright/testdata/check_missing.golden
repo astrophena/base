@@ -1,0 +1,10 @@
+-- error --
+found one or more files missing copyright headers
+-- stderr --
+level=INFO msg="file is missing copyright header" path=[DIR]/hello.go
+-- hello.go --
+package hello
+
+func Hello() string {
+	return "hello"
+}
