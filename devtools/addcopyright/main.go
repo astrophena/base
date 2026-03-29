@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"go.astrophena.name/base/cli"
 	"go.astrophena.name/base/devtools/internal"
@@ -46,13 +47,13 @@ func (cfg *config) isExcluded(path string) bool {
 	return false
 }
 
-func parseConfig() (*config, error) {
+func parseConfig(root string) (*config, error) {
 	cfg := &config{
 		headers:   make(map[string]string),
 		templates: make(map[string]string),
 	}
 
-	ar, err := txtar.ParseFile(filepath.Join(".devtools", "config.txtar"))
+	ar, err := txtar.ParseFile(filepath.Join(root, ".devtools", "config.txtar"))
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +91,7 @@ func (a *app) Flags(fs *flag.FlagSet) {
 func (a *app) Run(ctx context.Context) error {
 	internal.EnsureRoot()
 
-	cfg, err := parseConfig()
+	cfg, err := parseConfig(".")
 	if err != nil {
 		return err
 	}
@@ -100,6 +101,20 @@ func (a *app) Run(ctx context.Context) error {
 		return err
 	}
 
+	return processFiles(ctx, cfg, files, a.dry, a.check, getModTime)
+}
+
+type modTimeFunc func(path string) (time.Time, error)
+
+func getModTime(path string) (time.Time, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return info.ModTime(), nil
+}
+
+func processFiles(ctx context.Context, cfg *config, files []string, dry, check bool, modTimeFn modTimeFunc) error {
 	var foundMissing bool
 
 	for _, path := range files {
@@ -124,7 +139,7 @@ func (a *app) Run(ctx context.Context) error {
 		hasHeader := bytes.HasPrefix(content, []byte(header))
 
 		// If in check mode, we just check and record if a header is missing.
-		if a.check {
+		if check {
 			if !hasHeader {
 				logger.Info(ctx, "file is missing copyright header", slog.String("path", path))
 				foundMissing = true
@@ -138,14 +153,14 @@ func (a *app) Run(ctx context.Context) error {
 		}
 
 		// If not in check mode and the header is missing, add it.
-		info, err := os.Stat(path)
+		modtime, err := modTimeFn(path)
 		if err != nil {
 			return err
 		}
-		year := info.ModTime().Year()
+		year := modtime.Year()
 		hdr := fmt.Sprintf(tmpl, year)
 
-		if a.dry {
+		if dry {
 			logger.Info(ctx, "would add copyright header", slog.String("path", path), slog.String("header", hdr))
 			continue
 		}
@@ -160,7 +175,7 @@ func (a *app) Run(ctx context.Context) error {
 
 	// If in check mode and we found files with missing headers, return an error
 	// to produce a non-zero exit code.
-	if a.check && foundMissing {
+	if check && foundMissing {
 		return fmt.Errorf("found one or more files missing copyright headers")
 	}
 

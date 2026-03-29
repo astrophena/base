@@ -1,0 +1,8 @@
+-- stderr --
+level=INFO msg="would add copyright header" path=[DIR]/hello.go header="// © 2026 Ilya Mateyko. All rights reserved.\n// Use of this source code is governed by the ISC\n// license that can be found in the LICENSE.md file.\n\n"
+-- hello.go --
+package hello
+
+func Hello() string {
+	return "hello"
+}
