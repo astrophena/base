@@ -1,0 +1,105 @@
+// © 2026 Ilya Mateyko. All rights reserved.
+// Use of this source code is governed by the ISC
+// license that can be found in the LICENSE.md file.
+
+package components
+
+import (
+	"fmt"
+	"html/template"
+
+	"go.astrophena.name/base/version"
+)
+
+type DebugKV struct {
+	K string
+	V any
+}
+
+type DebugLink struct {
+	URL  string
+	Desc string
+}
+
+type DebugData struct {
+	CmdName    string
+	Version    version.Info
+	KVs        []DebugKV
+	Links      []DebugLink
+	MenuItems  []template.HTML
+	Stylesheet string
+}
+
+templ Debug(d DebugData) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8"/>
+			<meta name="viewport" content="width=device-width,initial-scale=1"/>
+			<link rel="stylesheet" href={ templ.URL("/" + d.Stylesheet) }/>
+			<title>{ d.CmdName } debug</title>
+		</head>
+		<body>
+			<header>
+				<h1>{ d.CmdName } debug</h1>
+				if len(d.MenuItems) > 0 {
+					<nav>
+						for _, item := range d.MenuItems {
+							@templ.Raw(string(item))
+						}
+					</nav>
+				}
+			</header>
+			<main>
+				<ul>
+					for _, link := range d.Links {
+						<li><a href={ templ.URL(link.URL) }>{ link.Desc }</a></li>
+					}
+				</ul>
+				<h2>Version</h2>
+				<table>
+					<tbody>
+						if d.Version.Commit != "" && d.Version.BuiltAt != "" {
+							<tr>
+								<td>Commit</td>
+								<td>
+									<!-- Set only for go.astrophena.name/* modules. -->
+									if d.Version.ModuleName != "" {
+										<a href={ templ.URL("https://github.com/astrophena/" + d.Version.ModuleName + "/commit/" + d.Version.Commit) }>
+											{ d.Version.Commit }
+										</a>
+									} else {
+										{ d.Version.Commit }
+									}
+								</td>
+							</tr>
+							<tr>
+								<td>Built at</td>
+								<td>{ d.Version.BuiltAt }</td>
+							</tr>
+						}
+						<tr>
+							<td>Go version</td>
+							<td>{ d.Version.Go }</td>
+						</tr>
+						<tr>
+							<td>Built for</td>
+							<td>{ d.Version.OS }/{ d.Version.Arch }</td>
+						</tr>
+					</tbody>
+				</table>
+				<h2>Variables</h2>
+				<table>
+					<tbody>
+						for _, kv := range d.KVs {
+							<tr>
+								<td>{ kv.K }</td>
+								<td><code>{ fmt.Sprintf("%v", kv.V) }</code></td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</main>
+		</body>
+	</html>
+}

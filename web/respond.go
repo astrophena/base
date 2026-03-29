@@ -5,19 +5,18 @@
 package web
 
 import (
-	"bytes"
 	"context"
 	_ "embed"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html/template"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
 	"strings"
 
 	"go.astrophena.name/base/logger"
+	"go.astrophena.name/base/web/internal/components"
 )
 
 type contextKey string
@@ -83,14 +82,6 @@ func respondJSON(w http.ResponseWriter, response any, wroteStatus bool) {
 	w.Write([]byte("\n"))
 }
 
-var (
-	//go:embed templates/error.html
-	errorTemplateStr string
-	errorTemplate    = template.Must(template.New("error").Funcs(template.FuncMap{
-		"static": StaticFS.HashName,
-	}).Parse(errorTemplateStr))
-)
-
 // RespondError writes an error response in HTML format to w and logs the error
 // using [logger.Error] if error is [ErrInternalServerError].
 //
@@ -144,34 +135,31 @@ func respondError(json bool, w http.ResponseWriter, r *http.Request, err error) 
 		return
 	}
 
-	data := struct {
-		StatusCode int
-		StatusText string
-		IsTrusted  bool
-		Error      error  // set if IsTrusted is true
-		Method     string // set if method not allowed
-		Stacktrace string // set if IsTrusted is true
-	}{
+	errorPage := components.ErrorPage{
 		StatusCode: int(se),
 		StatusText: http.StatusText(int(se)),
 		IsTrusted:  IsTrustedRequest(r),
 	}
-	if data.IsTrusted {
-		data.Error = err
-		data.Stacktrace = string(debug.Stack())
+	if errorPage.IsTrusted {
+		errorPage.Error = err
+		errorPage.Stacktrace = string(debug.Stack())
 	}
-	if data.StatusCode == http.StatusMethodNotAllowed {
-		data.Method = r.Method
+	if errorPage.StatusCode == http.StatusMethodNotAllowed {
+		errorPage.Method = r.Method
 	}
 
-	var buf bytes.Buffer
-	if err := errorTemplate.Execute(&buf, data); err != nil {
-		logger.Error(r.Context(), "failed to execute error template", slog.Any("err", err))
+	layout := components.Layout{
+		Title:      fmt.Sprintf("%d %s", errorPage.StatusCode, errorPage.StatusText),
+		Stylesheet: StaticFS.HashName("static/css/main.css"),
+		Content:    errorPage.Component(),
+	}
+
+	if err := layout.Component().Render(r.Context(), w); err != nil {
+		logger.Error(r.Context(), "failed to render error layout", slog.Any("err", err))
 		// Fallback, if template execution fails.
-		fmt.Fprintf(w, "%d: %s", data.StatusCode, data.StatusText)
+		fmt.Fprintf(w, "%d: %s", errorPage.StatusCode, errorPage.StatusText)
 		return
 	}
-	buf.WriteTo(w)
 }
 
 func escapeForJSON(s string) string {

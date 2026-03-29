@@ -8,8 +8,18 @@
   "rr/rr_test.go",
   "txtar/txtar.go",
   "web/debug.go",
-  "web/debug_test.go"
+  "web/debug_test.go",
+  "web/internal/components/debug_templ.go",
+  "web/internal/components/error_templ.go",
+  "web/internal/components/layout_templ.go"
 ]
+-- copyright/template.templ --
+// © %d Ilya Mateyko. All rights reserved.
+// Use of this source code is governed by the ISC
+// license that can be found in the LICENSE.md file.
+
+-- copyright/header.templ --
+// ©
 -- copyright/template.go --
 // © %d Ilya Mateyko. All rights reserved.
 // Use of this source code is governed by the ISC
