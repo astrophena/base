@@ -1,0 +1,46 @@
+// © 2026 Ilya Mateyko. All rights reserved.
+// Use of this source code is governed by the ISC
+// license that can be found in the LICENSE.md file.
+
+package components
+
+import "net/http"
+
+type ErrorPage struct {
+	StatusCode int
+	StatusText string
+	IsTrusted  bool
+	Error      error  // set if IsTrusted is true
+	Method     string // set if method not allowed
+	Stacktrace string // set if IsTrusted is true
+}
+
+templ (e ErrorPage) Component() {
+	<h1>{ e.StatusCode } { e.StatusText }</h1>
+	switch e.StatusCode {
+		case http.StatusInternalServerError:
+			<p>Oops, something went wrong.</p>
+		case http.StatusMethodNotAllowed:
+			<p>Method { e.Method } is not allowed.</p>
+		case http.StatusNotFound:
+			<p>The page you were looking for doesn’t exist.</p>
+			<p>You may have mistyped the address or the page may have moved.</p>
+		case http.StatusForbidden:
+			<p>You are not allowed to access this page.</p>
+		case http.StatusUnauthorized:
+			<p>You need to authorize to access this page.</p>
+		case http.StatusBadRequest:
+			<p>Your request is invalid.</p>
+		default:
+			<p>Something went wrong.</p>
+	}
+	if e.IsTrusted {
+		<details>
+			<summary>Technical information</summary>
+			<h2>Error</h2>
+			<pre><code>{ e.Error.Error() }</code></pre>
+			<h2>Stacktrace</h2>
+			<pre><code>{ e.Stacktrace }</code></pre>
+		</details>
+	}
+}

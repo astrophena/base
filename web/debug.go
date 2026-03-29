@@ -8,10 +8,8 @@
 package web
 
 import (
-	"bytes"
 	"cmp"
 	_ "embed"
-	"fmt"
 	"html"
 	"html/template"
 	"net/http"
@@ -23,12 +21,9 @@ import (
 	"sync"
 	"time"
 
-	"go.astrophena.name/base/syncx"
 	"go.astrophena.name/base/version"
+	"go.astrophena.name/base/web/internal/components"
 )
-
-//go:embed templates/debug.html
-var debugTemplate string
 
 // DebugHandler is an [http.Handler] that serves a debugging "homepage", and
 // provides helpers to register more debug endpoints and reports.
@@ -49,7 +44,6 @@ type DebugHandler struct {
 	kvfuncs  []kvfunc                       // output one table row each, see KV()
 	links    []link                         // one link in header
 	menuFunc func(*http.Request) []MenuItem // function to generate the menu
-	tpl      syncx.Lazy[*template.Template] // template that is used for rendering debug page
 }
 
 // Utility types used for rendering templates and discovery endpoint.
@@ -57,10 +51,6 @@ type (
 	kvfunc struct {
 		k string
 		v func() any
-	}
-	kv struct {
-		K string
-		V any
 	}
 	link struct {
 		URL  string `json:"url"`
@@ -140,47 +130,37 @@ func (d *DebugHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 
-	tpl, err := d.tpl.GetErr(func() (*template.Template, error) {
-		return template.New("debug").Parse(debugTemplate)
-	})
-	if err != nil {
-		RespondError(w, r, fmt.Errorf("failed to initialize template: %w", err))
-		return
-	}
-
-	var menuItems []MenuItem
+	var htmlItems []template.HTML
 	if d.menuFunc != nil {
-		menuItems = d.menuFunc(r)
+		for _, item := range d.menuFunc(r) {
+			htmlItems = append(htmlItems, item.ToHTML())
+		}
 	}
 
-	var kvs []kv
+	var kvs []components.DebugKV
 	for _, kvf := range d.kvfuncs {
-		kvs = append(kvs, kv{kvf.k, kvf.v()})
+		kvs = append(kvs, components.DebugKV{K: kvf.k, V: kvf.v()})
 	}
 
-	data := struct {
-		CmdName    string
-		Version    version.Info
-		KVs        []kv
-		HasIcon    bool
-		Links      []link
-		MenuItems  []MenuItem
-		Stylesheet string
-	}{
+	var parsedLinks []components.DebugLink
+	for _, l := range d.links {
+		parsedLinks = append(parsedLinks, components.DebugLink{URL: l.URL, Desc: l.Desc})
+	}
+
+	data := components.DebugData{
 		CmdName:    version.CmdName(),
 		Version:    version.Version(),
 		KVs:        kvs,
-		Links:      d.links,
-		MenuItems:  menuItems,
+		Links:      parsedLinks,
+		MenuItems:  htmlItems,
 		Stylesheet: StaticFS.HashName("static/css/main.css"),
 	}
 
-	var buf bytes.Buffer
-	if err := tpl.Execute(&buf, &data); err != nil {
+	err := components.Debug(data).Render(r.Context(), w)
+	if err != nil {
 		RespondError(w, r, err)
 		return
 	}
-	buf.WriteTo(w)
 }
 
 // Handle registers handler at /debug/<slug> and creates a descriptive entry in
