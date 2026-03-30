@@ -6,7 +6,7 @@ require (
 	github.com/a-h/templ v0.3.1001
 	github.com/go4org/hashtriemap v0.0.0-20251130024219-545ba229f689
 	github.com/lmittmann/tint v1.1.3
-	golang.org/x/sync v0.19.0
+	golang.org/x/sync v0.20.0
 	golang.org/x/term v0.41.0
 )
 
