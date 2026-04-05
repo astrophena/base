@@ -40,7 +40,7 @@ type config struct {
 
 func (cfg *config) isExcluded(path string) bool {
 	for _, ex := range cfg.exclusions {
-		if matched, err := filepath.Match(ex, path); err == nil && matched {
+		if matched, err := filepath.Match(filepath.FromSlash(ex), filepath.FromSlash(path)); err == nil && matched {
 			return true
 		}
 		if strings.HasSuffix(path, ex) {
