@@ -1,6 +1,6 @@
 module go.astrophena.name/base
 
-go 1.26.0
+go 1.26.1
 
 require (
 	github.com/a-h/templ v0.3.1001
