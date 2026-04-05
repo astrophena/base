@@ -136,3 +136,52 @@ func TestProcessFiles(t *testing.T) {
 		return txtar.Format(ar)
 	}, *update)
 }
+
+func TestIsExcluded(t *testing.T) {
+	t.Parallel()
+
+	cases := map[string]struct {
+		exclusions []string
+		path       string
+		want       bool
+	}{
+		"suffix match": {
+			exclusions: []string{"excluded.go"},
+			path:       "excluded.go",
+			want:       true,
+		},
+		"suffix match nested": {
+			exclusions: []string{"excluded.go"},
+			path:       "pkg/excluded.go",
+			want:       true,
+		},
+		"glob match": {
+			exclusions: []string{"vendor/*.go"},
+			path:       "vendor/lib.go",
+			want:       true,
+		},
+		"glob no match": {
+			exclusions: []string{"vendor/*.go"},
+			path:       "src/lib.go",
+			want:       false,
+		},
+		"glob match wildcard ext": {
+			exclusions: []string{"generated_*"},
+			path:       "generated_types.go",
+			want:       true,
+		},
+		"no match": {
+			exclusions: []string{"other.go"},
+			path:       "hello.go",
+			want:       false,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			cfg := &config{exclusions: tc.exclusions}
+			testutil.AssertEqual(t, cfg.isExcluded(tc.path), tc.want)
+		})
+	}
+}
