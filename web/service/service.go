@@ -6,6 +6,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -57,6 +58,11 @@ type StatefulService interface {
 // preventing idle shutdown.
 type IsActiveChecker interface {
 	IsActive() bool
+}
+
+// ShutdownHook allows a service to perform cleanup before shutdown.
+type ShutdownHook interface {
+	Shutdown(ctx context.Context) error
 }
 
 // Run runs the service. It orchestrates endpoints and background workers based
@@ -159,7 +165,17 @@ func (a *adapter) Run(ctx context.Context) error {
 		g.Go(func() error { return s.Run(gctx) })
 	}
 
-	return g.Wait()
+	waitErr := g.Wait()
+
+	if shutdown, ok := a.svc.(ShutdownHook); ok {
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		defer cancel()
+		if err := shutdown.Shutdown(shutdownCtx); err != nil {
+			return errors.Join(waitErr, err)
+		}
+	}
+
+	return waitErr
 }
 
 func (a *adapter) newServer(addr string, config *EndpointConfig, notify bool, readyFunc func()) *web.Server {
