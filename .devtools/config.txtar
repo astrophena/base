@@ -1,17 +1,11 @@
 -- copyright/exclusions.json --
 [
-  "internal/hashfs/hashfs.go",
-  "internal/hashfs/hashfs_test.go",
-  "internal/unionfs/unionfs.go",
-  "internal/unionfs/unionfs_test.go",
-  "rr/rr.go",
-  "rr/rr_test.go",
+  "web/internal/hashfs/*.go",
+  "web/internal/unionfs/*.go",
+  "rr/*.go",
   "txtar/txtar.go",
-  "web/debug.go",
-  "web/debug_test.go",
-  "web/internal/components/debug_templ.go",
-  "web/internal/components/error_templ.go",
-  "web/internal/components/layout_templ.go"
+  "web/debug*.go",
+  "web/internal/components/*_templ.go"
 ]
 -- copyright/template.templ --
 // © %d Ilya Mateyko. All rights reserved.

@@ -13,8 +13,9 @@ The tool is configured through a .devtools/config.txtar file in the project's
 root directory. This file is a txtar archive and can contain the following
 files:
 
-  - copyright/exclusions.json: A JSON array of file paths to exclude from
-    processing.
+  - copyright/exclusions.json: A JSON array of file paths or glob patterns to
+    exclude from processing. Entries are matched against file paths using
+    [filepath.Match] glob patterns first, then as suffix matches.
   - copyright/template.{ext}: A template for the copyright header for a specific
     file extension (e.g., template.go). The template can contain a
     formatting verb %d for the year.
