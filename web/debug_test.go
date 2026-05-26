@@ -161,3 +161,14 @@ func TestDebuggerDiscovery(t *testing.T) {
 func getDebug(t *testing.T, mux *http.ServeMux) string {
 	return send(t, mux, http.MethodGet, "/debug/", http.StatusOK)
 }
+
+func TestLinkItemToHTMLEscapesTarget(t *testing.T) {
+	t.Parallel()
+
+	item := LinkItem{Name: "name", Target: `" onclick="alert(1)`}
+	h := item.ToHTML()
+	body := string(h)
+	if !strings.Contains(body, "&#34; onclick=&#34;alert(1)") {
+		t.Fatalf("expected escaped target, got: %q", body)
+	}
+}

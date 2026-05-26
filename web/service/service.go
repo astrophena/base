@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"net/netip"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -36,6 +37,7 @@ type EndpointConfig struct {
 	Middleware            []web.Middleware
 	Mux                   *http.ServeMux
 	StaticFS              fs.FS
+	TrustedProxies        []netip.Prefix
 }
 
 // PublicService is implemented by services that expose a public endpoint.
@@ -189,6 +191,7 @@ func (a *adapter) newServer(addr string, config *EndpointConfig, notify bool, re
 		StaticFS:              config.StaticFS,
 		CrossOriginProtection: config.CrossOriginProtection,
 		CSP:                   config.CSP,
+		TrustedProxies:        config.TrustedProxies,
 		NotifySystemd:         notify,
 		Ready:                 readyFunc,
 	}

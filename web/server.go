@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"slices"
 	"strings"
@@ -30,6 +31,10 @@ import (
 type serverContextKeyType struct{}
 
 var serverContextKey = serverContextKeyType{}
+
+type connNetworkContextKeyType struct{}
+
+var connNetworkContextKey = connNetworkContextKeyType{}
 
 // Server is used to configure the HTTP server started by
 // [Server.ListenAndServe].
@@ -66,8 +71,15 @@ type Server struct {
 	// NotifySystemd specifies whether to notify systemd when the server is ready and where the server is stopping.
 	// Also, the server will start the systemd watchdog timer if enabled.
 	NotifySystemd bool
+	// TrustedProxies is a list of proxy CIDR ranges trusted to provide X-Forwarded-For.
+	// If empty, X-Forwarded-For is ignored.
+	TrustedProxies []netip.Prefix
 
 	handler syncx.Lazy[*handler]
+
+	// listenerNetwork stores the accepted listener network (e.g. "tcp", "unix").
+	// It is set when ListenAndServe starts.
+	listenerNetwork string
 }
 
 type handler struct {
@@ -134,7 +146,7 @@ func (s *Server) logRequest(next http.Handler) http.Handler {
 
 		l := logger.Get(r.Context())
 		sl := l.With(
-			slog.String("ip", realIP(r)),
+			slog.String("ip", s.realIP(r)),
 			slog.String("method", r.Method),
 			slog.String("url", r.URL.String()),
 			slog.String("user_agent", r.UserAgent()),
@@ -157,12 +169,51 @@ func (s *Server) logRequest(next http.Handler) http.Handler {
 	})
 }
 
-func realIP(r *http.Request) string {
-	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
-		return strings.Split(ip, ",")[0]
+func (s *Server) realIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
 	}
-	ip, _, _ := net.SplitHostPort(r.RemoteAddr)
-	return ip
+	addr, err := netip.ParseAddr(strings.TrimSpace(host))
+	trusted := s.isTrustedForwardedSource(r, err == nil, addr)
+
+	if trusted {
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			for part := range strings.SplitSeq(xff, ",") {
+				ip := strings.TrimSpace(part)
+				if ip == "" {
+					continue
+				}
+				if p, err := netip.ParseAddr(ip); err == nil {
+					return p.String()
+				}
+			}
+		}
+	}
+
+	if err == nil {
+		return addr.String()
+	}
+	return strings.TrimSpace(host)
+}
+
+func (s *Server) isTrustedProxy(addr netip.Addr) bool {
+	for _, prefix := range s.TrustedProxies {
+		if prefix.Contains(addr) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *Server) isTrustedForwardedSource(r *http.Request, hasAddr bool, addr netip.Addr) bool {
+	if network, _ := r.Context().Value(connNetworkContextKey).(string); network == "unix" {
+		return true
+	}
+	if s.listenerNetwork == "unix" {
+		return true
+	}
+	return hasAddr && s.isTrustedProxy(addr)
 }
 
 func (s *Server) setHeaders(next http.Handler) http.Handler {
@@ -301,6 +352,7 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		}
 		logger.Info(ctx, "listening for HTTP requests", slog.String("addr", fmt.Sprintf("%s://%s", scheme, host)))
 	}
+	s.listenerNetwork = l.Addr().Network()
 
 	baseLogger := logger.Get(ctx)
 	httpSrv := &http.Server{
@@ -309,6 +361,9 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		BaseContext: func(_ net.Listener) context.Context {
 			baseCtx := logger.Put(ctx, baseLogger)
 			return context.WithValue(baseCtx, serverContextKey, s)
+		},
+		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
+			return context.WithValue(ctx, connNetworkContextKey, c.RemoteAddr().Network())
 		},
 	}
 

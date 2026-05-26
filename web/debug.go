@@ -75,7 +75,7 @@ type LinkItem struct {
 }
 
 func (li LinkItem) ToHTML() template.HTML {
-	return template.HTML("<a href=" + li.Target + ">" + html.EscapeString(li.Name) + "</a>")
+	return template.HTML("<a href=\"" + html.EscapeString(li.Target) + "\">" + html.EscapeString(li.Name) + "</a>")
 }
 
 // Debugger returns the [DebugHandler] registered on mux at /debug/, creating it
