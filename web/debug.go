@@ -12,12 +12,15 @@ import (
 	_ "embed"
 	"html"
 	"html/template"
+	"net"
 	"net/http"
 	"net/http/pprof"
+	"net/netip"
 	"net/url"
 	"os"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -118,6 +121,88 @@ func serveGC(w http.ResponseWriter, r *http.Request) {
 var timeStart = time.Now()
 
 func uptime() time.Duration { return time.Since(timeStart).Round(time.Second) }
+
+type xffDebugPart struct {
+	Raw    string `json:"raw"`
+	Parsed string `json:"parsed,omitempty"`
+	Valid  bool   `json:"valid"`
+}
+
+type xffDebugResponse struct {
+	RemoteAddr       string `json:"remote_addr"`
+	RemoteHost       string `json:"remote_host"`
+	RemoteAddrParsed bool   `json:"remote_addr_parsed"`
+	RemoteAddrIP     string `json:"remote_addr_ip,omitempty"`
+
+	ConnNetwork     string `json:"conn_network,omitempty"`
+	ListenerNetwork string `json:"listener_network,omitempty"`
+
+	UsingDefaultTrustedProxies bool     `json:"using_default_trusted_proxies"`
+	TrustedForwardedSource     bool     `json:"trusted_forwarded_source"`
+	TrustedProxies             []string `json:"trusted_proxies"`
+
+	XForwardedForRaw   string         `json:"x_forwarded_for_raw"`
+	XForwardedForParts []xffDebugPart `json:"x_forwarded_for_parts"`
+	XRealIP            string         `json:"x_real_ip,omitempty"`
+	Forwarded          string         `json:"forwarded,omitempty"`
+
+	RealIPResult string `json:"real_ip_result"`
+}
+
+func (s *Server) xffDebugHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		host, _, err := net.SplitHostPort(r.RemoteAddr)
+		if err != nil {
+			host = r.RemoteAddr
+		}
+		host = strings.TrimSpace(host)
+
+		addr, parseErr := netip.ParseAddr(host)
+		hasAddr := parseErr == nil
+
+		var trustedProxies []string
+		for _, prefix := range s.trustedProxies() {
+			trustedProxies = append(trustedProxies, prefix.String())
+		}
+
+		var parts []xffDebugPart
+		for part := range strings.SplitSeq(r.Header.Get("X-Forwarded-For"), ",") {
+			raw := strings.TrimSpace(part)
+			if raw == "" {
+				continue
+			}
+
+			item := xffDebugPart{Raw: raw}
+			if parsed, err := netip.ParseAddr(raw); err == nil {
+				item.Valid = true
+				item.Parsed = parsed.String()
+			}
+			parts = append(parts, item)
+		}
+
+		connNetwork, _ := r.Context().Value(connNetworkContextKey).(string)
+		resp := xffDebugResponse{
+			RemoteAddr:                 r.RemoteAddr,
+			RemoteHost:                 host,
+			RemoteAddrParsed:           hasAddr,
+			ConnNetwork:                connNetwork,
+			ListenerNetwork:            s.listenerNetwork,
+			UsingDefaultTrustedProxies: s.TrustedProxies == nil,
+			TrustedForwardedSource:     s.isTrustedForwardedSource(r, hasAddr, addr),
+			TrustedProxies:             trustedProxies,
+			XForwardedForRaw:           r.Header.Get("X-Forwarded-For"),
+			XForwardedForParts:         parts,
+			XRealIP:                    r.Header.Get("X-Real-IP"),
+			Forwarded:                  r.Header.Get("Forwarded"),
+			RealIPResult:               s.realIP(r),
+		}
+		if hasAddr {
+			resp.RemoteAddrIP = addr.String()
+		}
+
+		RespondJSON(w, resp)
+	})
+}
 
 // ServeHTTP implements the [http.Handler] interface.
 func (d *DebugHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

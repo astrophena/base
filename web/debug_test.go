@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"net/netip"
 	"os"
 	"strings"
 	"testing"
@@ -156,6 +158,47 @@ func TestDebuggerDiscovery(t *testing.T) {
 			t.Errorf("expected to find link %+v in discovery response, but it was missing", want)
 		}
 	}
+}
+
+func TestXFFDebugHandler(t *testing.T) {
+	t.Parallel()
+
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/debug/xff", nil)
+	req.RemoteAddr = "127.0.0.1:1234"
+	req.Header.Set("X-Forwarded-For", " 203.0.113.9 , invalid")
+	req.Header.Set("X-Real-IP", "198.51.100.10")
+	req.Header.Set("Forwarded", "for=203.0.113.9")
+
+	w := httptest.NewRecorder()
+	s.xffDebugHandler().ServeHTTP(w, req)
+
+	var got xffDebugResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("failed to unmarshal xff debug response: %v\nbody: %s", err, w.Body.String())
+	}
+
+	testutil.AssertEqual(t, true, got.UsingDefaultTrustedProxies)
+	testutil.AssertEqual(t, true, got.TrustedForwardedSource)
+	testutil.AssertEqual(t, []string{"127.0.0.0/8"}, got.TrustedProxies)
+	testutil.AssertEqual(t, "203.0.113.9", got.RealIPResult)
+	testutil.AssertEqual(t, "198.51.100.10", got.XRealIP)
+	testutil.AssertEqual(t, "for=203.0.113.9", got.Forwarded)
+	if len(got.XForwardedForParts) != 2 {
+		t.Fatalf("got %d XFF parts, want 2: %+v", len(got.XForwardedForParts), got.XForwardedForParts)
+	}
+	testutil.AssertEqual(t, true, got.XForwardedForParts[0].Valid)
+	testutil.AssertEqual(t, false, got.XForwardedForParts[1].Valid)
+
+	s.TrustedProxies = []netip.Prefix{}
+	w = httptest.NewRecorder()
+	s.xffDebugHandler().ServeHTTP(w, req)
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("failed to unmarshal xff debug response: %v\nbody: %s", err, w.Body.String())
+	}
+	testutil.AssertEqual(t, false, got.UsingDefaultTrustedProxies)
+	testutil.AssertEqual(t, false, got.TrustedForwardedSource)
+	testutil.AssertEqual(t, "127.0.0.1", got.RealIPResult)
 }
 
 func getDebug(t *testing.T, mux *http.ServeMux) string {

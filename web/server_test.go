@@ -224,6 +224,12 @@ func TestServerRealIP(t *testing.T) {
 	req.Header.Set("X-Forwarded-For", "203.0.113.9")
 	testutil.AssertEqual(t, "198.51.100.10", s.realIP(req))
 
+	req.RemoteAddr = "127.0.0.1:1234"
+	testutil.AssertEqual(t, "203.0.113.9", s.realIP(req))
+
+	s.TrustedProxies = []netip.Prefix{}
+	testutil.AssertEqual(t, "127.0.0.1", s.realIP(req))
+
 	prefix := netip.MustParsePrefix("192.0.2.0/24")
 	s.TrustedProxies = []netip.Prefix{prefix}
 	req.RemoteAddr = "192.0.2.10:9999"
