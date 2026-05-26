@@ -33,6 +33,7 @@ package txtar
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -143,12 +144,30 @@ func fixNL(data []byte) []byte {
 
 // Extract extracts an archive to dir.
 func Extract(a *Archive, dir string) error {
+	root, err := os.OpenRoot(dir)
+	if err != nil {
+		return err
+	}
+	defer root.Close()
+
 	for _, f := range a.Files {
-		if err := os.MkdirAll(filepath.Join(dir, filepath.Dir(f.Name)), 0o755); err != nil {
+		if f.Name == "" {
+			return errors.New("txtar: file name is empty")
+		}
+		if err := root.MkdirAll(filepath.Dir(f.Name), 0o755); err != nil {
 			return err
 		}
-		if err := os.WriteFile(filepath.Join(dir, f.Name), f.Data, 0o644); err != nil {
+		fw, err := root.OpenFile(f.Name, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+		if err != nil {
 			return err
+		}
+		_, writeErr := fw.Write(f.Data)
+		closeErr := fw.Close()
+		if writeErr != nil {
+			return writeErr
+		}
+		if closeErr != nil {
+			return closeErr
 		}
 	}
 	return nil
@@ -172,8 +191,13 @@ func FromDir(dir string) (*Archive, error) {
 			return err
 		}
 
+		relPath, err := filepath.Rel(dir, path)
+		if err != nil {
+			return err
+		}
+
 		a.Files = append(a.Files, File{
-			Name: d.Name(),
+			Name: filepath.ToSlash(relPath),
 			Data: b,
 		})
 
