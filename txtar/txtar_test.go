@@ -251,3 +251,44 @@ func createFile(t *testing.T, path, content string) {
 		t.Fatalf("Failed to create file: %v", err)
 	}
 }
+
+func TestExtractPathTraversal(t *testing.T) {
+	tempDir := t.TempDir()
+
+	cases := []string{"../escape.txt", "/abs/escape.txt"}
+	for _, name := range cases {
+		t.Run(name, func(t *testing.T) {
+			a := &Archive{Files: []File{{Name: name, Data: []byte("x")}}}
+			if err := Extract(a, tempDir); err == nil {
+				t.Fatalf("Extract must fail for %q", name)
+			}
+		})
+	}
+}
+
+func TestFromDirNested(t *testing.T) {
+	tempDir := t.TempDir()
+	createFile(t, filepath.Join(tempDir, "a", "same.txt"), "a\n")
+	createFile(t, filepath.Join(tempDir, "b", "same.txt"), "b\n")
+
+	a, err := FromDir(tempDir)
+	if err != nil {
+		t.Fatalf("FromDir failed: %v", err)
+	}
+
+	want := map[string]string{
+		"a/same.txt": "a\n",
+		"b/same.txt": "b\n",
+	}
+	for _, f := range a.Files {
+		if got, ok := want[f.Name]; ok {
+			if string(f.Data) != got {
+				t.Fatalf("file %s data mismatch: %q", f.Name, string(f.Data))
+			}
+			delete(want, f.Name)
+		}
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing files: %v", want)
+	}
+}

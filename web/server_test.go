@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"sync"
 	"testing"
@@ -212,4 +213,28 @@ func getFreePort() (port int, err error) {
 	}
 	defer l.Close()
 	return l.Addr().(*net.TCPAddr).Port, nil
+}
+
+func TestServerRealIP(t *testing.T) {
+	t.Parallel()
+
+	s := &Server{}
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.RemoteAddr = "198.51.100.10:1234"
+	req.Header.Set("X-Forwarded-For", "203.0.113.9")
+	testutil.AssertEqual(t, "198.51.100.10", s.realIP(req))
+
+	prefix := netip.MustParsePrefix("192.0.2.0/24")
+	s.TrustedProxies = []netip.Prefix{prefix}
+	req.RemoteAddr = "192.0.2.10:9999"
+	req.Header.Set("X-Forwarded-For", " 203.0.113.9 , 198.51.100.20")
+	testutil.AssertEqual(t, "203.0.113.9", s.realIP(req))
+
+	req.Header.Set("X-Forwarded-For", "not-an-ip")
+	testutil.AssertEqual(t, "192.0.2.10", s.realIP(req))
+
+	req = req.WithContext(context.WithValue(req.Context(), connNetworkContextKey, "unix"))
+	req.RemoteAddr = "@"
+	req.Header.Set("X-Forwarded-For", "203.0.113.44")
+	testutil.AssertEqual(t, "203.0.113.44", s.realIP(req))
 }
