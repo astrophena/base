@@ -72,7 +72,8 @@ type Server struct {
 	// Also, the server will start the systemd watchdog timer if enabled.
 	NotifySystemd bool
 	// TrustedProxies is a list of proxy CIDR ranges trusted to provide X-Forwarded-For.
-	// If empty, X-Forwarded-For is ignored.
+	// If nil, 127.0.0.0/8 is trusted by default. If empty but non-nil,
+	// X-Forwarded-For is ignored.
 	TrustedProxies []netip.Prefix
 
 	handler syncx.Lazy[*handler]
@@ -198,12 +199,23 @@ func (s *Server) realIP(r *http.Request) string {
 }
 
 func (s *Server) isTrustedProxy(addr netip.Addr) bool {
-	for _, prefix := range s.TrustedProxies {
+	for _, prefix := range s.trustedProxies() {
 		if prefix.Contains(addr) {
 			return true
 		}
 	}
 	return false
+}
+
+var defaultTrustedProxies = []netip.Prefix{
+	netip.MustParsePrefix("127.0.0.0/8"),
+}
+
+func (s *Server) trustedProxies() []netip.Prefix {
+	if s.TrustedProxies == nil {
+		return defaultTrustedProxies
+	}
+	return s.TrustedProxies
 }
 
 func (s *Server) isTrustedForwardedSource(r *http.Request, hasAddr bool, addr netip.Addr) bool {
@@ -271,7 +283,7 @@ func (s *Server) initHandler() *handler {
 
 	s.Mux.Handle("GET /static/", hashfs.FileServer(h.static))
 	if s.Debuggable {
-		Debugger(s.Mux)
+		Debugger(s.Mux).Handle("xff", "X-Forwarded-For", s.xffDebugHandler())
 	}
 
 	if s.CrossOriginProtection != nil {
