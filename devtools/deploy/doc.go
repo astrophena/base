@@ -3,21 +3,37 @@
 // license that can be found in the LICENSE.md file.
 
 /*
-Deploy sends the service or site archive to the deployment server.
+Deploy sends deployment artifacts to deployd.
+
+It supports two deployment shapes:
+
+  - site and service deployments upload one multipart archive to /site or
+    /service.
+  - artifact deployments publish one or more large files through deployd's
+    chunked /artifact API, with a signed manifest for client-side verification.
 
 How this works (private links):
 
   - https://github.com/astrophena/infra/tree/master/services/deployd
-  - https://github.com/astrophena/infra/blob/8097b13be88b70de532aa656a0e91db0e662ad49/services/deployd/internal/deploy/deploy.go#L230
 
 # Usage
 
-	$ go tool deploy <service or site> <archive>
+Deploy a site or service archive:
 
-Arguments:
+	$ go tool deploy -type site astrophena.name archive.tar.gz
+	$ go tool deploy -type service payday archive.tar.gz
 
-  - service or site: The target service or site for deployment (e.g., "starlet" or "astrophena.name").
-  - archive: The path to the service archive file (e.g., "archive.tar.gz").
+Publish an artifact bundle:
+
+	$ go tool deploy -type artifact dungeon kernel initrd.cpio rootfs.erofs
+
+Artifact uploads create a manifest that lists every file's size, SHA-256, and
+chunk SHA-256 values. The manifest is signed with Ed25519 and deployd verifies
+that signature before publishing the release.
+
+Artifact release IDs default to the current UTC timestamp in deployd's sortable
+release format, YYYYMMDDHHMMSS. Use -artifact-release-id to provide one
+explicitly, for example when retrying a workflow run.
 
 # Environment Variables
 
@@ -27,6 +43,14 @@ GitHub Actions runner:
   - ACTIONS_ID_TOKEN_REQUEST_URL: The URL to request the OIDC token from.
   - ACTIONS_ID_TOKEN_REQUEST_TOKEN: The bearer token for authenticating the
     OIDC token request.
+
+Artifact deployments also require an Ed25519 private key. By default the tool
+reads DEPLOY_ARTIFACT_SIGNING_KEY; override the variable name with
+-artifact-signing-key-env. The key may be one of:
+
+  - PKCS#8 PEM, such as output from openssl genpkey -algorithm Ed25519.
+  - base64 raw Ed25519 private key bytes.
+  - base64 or hex Ed25519 seed bytes.
 */
 package main
 
