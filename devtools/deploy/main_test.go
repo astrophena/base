@@ -243,6 +243,80 @@ func TestRunArtifactDeploymentUsesUploadToken(t *testing.T) {
 	}
 }
 
+func TestUploadArtifactFileChunksRetriesTemporaryNetworkError(t *testing.T) {
+	dir := t.TempDir()
+	artifactPath := filepath.Join(dir, "rootfs.erofs")
+	if err := os.WriteFile(artifactPath, []byte("artifact"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	defer replaceArtifactChunkUploadSleep(func(context.Context, time.Duration) bool { return true })()
+
+	var attempts int
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		attempts++
+		if attempts == 1 {
+			return nil, temporaryNetError{}
+		}
+		return jsonResponse(t, http.StatusOK, `{"status":"success"}`), nil
+	})}
+
+	a := &app{serverURL: "https://deploy.test"}
+	file := artifactManifestFile{
+		Path: "rootfs.erofs",
+		Chunks: []artifactManifestChunk{{
+			Index:  0,
+			Size:   int64(len("artifact")),
+			SHA256: "sha",
+		}},
+	}
+	if err := a.uploadArtifactFileChunks(context.Background(), client, "token", "dungeon", "upload-1", artifactPath, file, nil, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+}
+
+func TestUploadArtifactFileChunksRetriesStalledUpload(t *testing.T) {
+	dir := t.TempDir()
+	artifactPath := filepath.Join(dir, "rootfs.erofs")
+	if err := os.WriteFile(artifactPath, []byte("artifact"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	defer replaceArtifactChunkUploadSleep(func(context.Context, time.Duration) bool { return true })()
+	defer replaceArtifactChunkUploadStallTimeout(time.Millisecond)()
+
+	var attempts int
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		attempts++
+		if attempts == 1 {
+			var buf [1]byte
+			if _, err := r.Body.Read(buf[:]); err != nil {
+				t.Errorf("read first upload byte: %v", err)
+			}
+			<-r.Context().Done()
+			return nil, r.Context().Err()
+		}
+		return jsonResponse(t, http.StatusOK, `{"status":"success"}`), nil
+	})}
+
+	a := &app{serverURL: "https://deploy.test"}
+	file := artifactManifestFile{
+		Path: "rootfs.erofs",
+		Chunks: []artifactManifestChunk{{
+			Index:  0,
+			Size:   int64(len("artifact")),
+			SHA256: "sha",
+		}},
+	}
+	if err := a.uploadArtifactFileChunks(context.Background(), client, "token", "dungeon", "upload-1", artifactPath, file, nil, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+}
+
 func mustMarshalManifest(t *testing.T, releaseID, path string, publicKey ed25519.PublicKey) []byte {
 	t.Helper()
 	manifest, _, err := buildArtifactManifest([]string{path}, releaseID, publicKey, 4, &cli.Env{
@@ -262,4 +336,31 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
+}
+
+type temporaryNetError struct{}
+
+func (temporaryNetError) Error() string   { return "temporary network error" }
+func (temporaryNetError) Timeout() bool   { return true }
+func (temporaryNetError) Temporary() bool { return true }
+
+func jsonResponse(t *testing.T, status int, body string) *http.Response {
+	t.Helper()
+	return &http.Response{
+		StatusCode: status,
+		Header:     http.Header{"Content-Type": []string{"application/json"}},
+		Body:       io.NopCloser(bytes.NewBufferString(body)),
+	}
+}
+
+func replaceArtifactChunkUploadSleep(fn func(context.Context, time.Duration) bool) func() {
+	old := artifactChunkUploadSleep
+	artifactChunkUploadSleep = fn
+	return func() { artifactChunkUploadSleep = old }
+}
+
+func replaceArtifactChunkUploadStallTimeout(d time.Duration) func() {
+	old := artifactChunkUploadStallTimeout
+	artifactChunkUploadStallTimeout = d
+	return func() { artifactChunkUploadStallTimeout = old }
 }
