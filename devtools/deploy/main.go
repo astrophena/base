@@ -19,12 +19,15 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"go.astrophena.name/base/cli"
@@ -35,7 +38,18 @@ import (
 const (
 	defaultArtifactChunkBytes = 64 << 20
 	maxArtifactChunkBytes     = 64 << 20
+
+	artifactChunkUploadAttempts   = 4
+	artifactChunkUploadRetryDelay = 5 * time.Second
 )
+
+var (
+	artifactChunkUploadAttemptTimeout = 10 * time.Minute
+	artifactChunkUploadStallTimeout   = 2 * time.Minute
+	artifactChunkUploadSleep          = sleepArtifactChunkUploadRetry
+)
+
+var errArtifactChunkUploadStalled = errors.New("artifact chunk upload stalled")
 
 func main() { cli.Main(new(app)) }
 
@@ -343,24 +357,247 @@ func (a *app) uploadArtifactFileChunks(ctx context.Context, client *http.Client,
 		if stderr != nil {
 			fmt.Fprintf(stderr, "uploading %s chunk %d/%d\n", file.Path, chunk.Index+1, len(file.Chunks))
 		}
-		_, err := request.Make[request.IgnoreResponse](ctx, request.Params{
-			Method: http.MethodPut,
-			URL:    artifactChunkURL(a.serverURL, target, uploadID, file.Path, chunk.Index),
-			Body:   data,
-			Headers: map[string]string{
-				"Authorization":  "Bearer " + token,
-				"Content-Type":   "application/octet-stream",
-				"User-Agent":     version.UserAgent(),
-				"X-Chunk-SHA256": chunk.SHA256,
-			},
-			HTTPClient: client,
-		})
-		if err != nil {
+		if err := a.uploadArtifactChunk(ctx, client, token, target, uploadID, file.Path, chunk, data, stderr); err != nil {
 			return err
 		}
 		offset += chunk.Size
 	}
 	return nil
+}
+
+func (a *app) uploadArtifactChunk(ctx context.Context, client *http.Client, token, target, uploadID, filePath string, chunk artifactManifestChunk, data []byte, stderr io.Writer) error {
+	chunkURL := artifactChunkURL(a.serverURL, target, uploadID, filePath, chunk.Index)
+	var lastErr error
+	for attempt := 1; attempt <= artifactChunkUploadAttempts; attempt++ {
+		attemptCtx, cancel := context.WithTimeout(ctx, artifactChunkUploadAttemptTimeout)
+		err := uploadArtifactChunkAttempt(attemptCtx, client, token, chunkURL, chunk, data)
+		cancel()
+		if err == nil {
+			return nil
+		}
+		lastErr = err
+		if !isTemporaryArtifactUploadError(err) || attempt == artifactChunkUploadAttempts {
+			return err
+		}
+		if stderr != nil {
+			fmt.Fprintf(stderr, "retrying %s chunk %d after upload error: %v\n", filePath, chunk.Index+1, err)
+		}
+		if !artifactChunkUploadSleep(ctx, artifactChunkUploadRetryDelay) {
+			return err
+		}
+	}
+	return lastErr
+}
+
+func uploadArtifactChunkAttempt(ctx context.Context, client *http.Client, token, chunkURL string, chunk artifactManifestChunk, data []byte) error {
+	uploadCtx, cancelUpload := context.WithCancelCause(ctx)
+	defer cancelUpload(nil)
+
+	progress := make(chan struct{}, 1)
+	done := make(chan struct{})
+	var doneOnce sync.Once
+	finishUpload := func() { doneOnce.Do(func() { close(done) }) }
+	stallTimeout := artifactChunkUploadStallTimeout
+	go monitorArtifactChunkUploadProgress(uploadCtx, cancelUpload, stallTimeout, progress, done)
+	defer finishUpload()
+
+	body := &artifactUploadProgressReader{
+		r: bytes.NewReader(data),
+		onProgress: func() {
+			if usesNetworkProgress(client) {
+				return
+			}
+			select {
+			case progress <- struct{}{}:
+			default:
+			}
+		},
+		onDone: finishUpload,
+	}
+	req, err := http.NewRequestWithContext(uploadCtx, http.MethodPut, chunkURL, body)
+	if err != nil {
+		return err
+	}
+	req.ContentLength = int64(len(data))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/octet-stream")
+	req.Header.Set("User-Agent", version.UserAgent())
+	req.Header.Set("X-Chunk-SHA256", chunk.SHA256)
+
+	attemptClient := *client
+	useNetworkProgress(&attemptClient, func() {
+		select {
+		case progress <- struct{}{}:
+		default:
+		}
+	})
+	res, err := attemptClient.Do(req)
+	if err != nil {
+		if errors.Is(context.Cause(uploadCtx), errArtifactChunkUploadStalled) {
+			return errArtifactChunkUploadStalled
+		}
+		return err
+	}
+	defer res.Body.Close()
+
+	b, err := io.ReadAll(res.Body)
+	if err != nil {
+		return err
+	}
+	if res.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s %q: %w", http.MethodPut, chunkURL, &request.StatusError{
+			WantedStatusCode: http.StatusOK,
+			StatusCode:       res.StatusCode,
+			Headers:          res.Header,
+			Body:             b,
+		})
+	}
+	return nil
+}
+
+func usesNetworkProgress(client *http.Client) bool {
+	if client.Transport == nil {
+		return true
+	}
+	_, ok := client.Transport.(*http.Transport)
+	return ok
+}
+
+func useNetworkProgress(client *http.Client, onProgress func()) {
+	base, ok := client.Transport.(*http.Transport)
+	if client.Transport == nil {
+		base, _ = http.DefaultTransport.(*http.Transport)
+		ok = base != nil
+	}
+	if !ok {
+		return
+	}
+
+	t := base.Clone()
+	dialContext := t.DialContext
+	if dialContext == nil {
+		var d net.Dialer
+		dialContext = d.DialContext
+	}
+	t.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		conn, err := dialContext(ctx, network, address)
+		if err != nil {
+			return nil, err
+		}
+		return artifactUploadProgressConn{Conn: conn, onProgress: onProgress}, nil
+	}
+	if t.DialTLSContext != nil {
+		dialTLSContext := t.DialTLSContext
+		t.DialTLSContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+			conn, err := dialTLSContext(ctx, network, address)
+			if err != nil {
+				return nil, err
+			}
+			return artifactUploadProgressConn{Conn: conn, onProgress: onProgress}, nil
+		}
+	}
+	client.Transport = t
+}
+
+type artifactUploadProgressConn struct {
+	net.Conn
+	onProgress func()
+}
+
+func (c artifactUploadProgressConn) Write(p []byte) (int, error) {
+	n, err := c.Conn.Write(p)
+	if n > 0 {
+		c.onProgress()
+	}
+	return n, err
+}
+
+func monitorArtifactChunkUploadProgress(ctx context.Context, cancel context.CancelCauseFunc, stallTimeout time.Duration, progress <-chan struct{}, done <-chan struct{}) {
+	timer := time.NewTimer(stallTimeout)
+	defer timer.Stop()
+	for {
+		select {
+		case <-timer.C:
+			cancel(errArtifactChunkUploadStalled)
+			return
+		case <-progress:
+			if !timer.Stop() {
+				select {
+				case <-timer.C:
+				default:
+				}
+			}
+			timer.Reset(stallTimeout)
+		case <-done:
+			return
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+type artifactUploadProgressReader struct {
+	r          *bytes.Reader
+	onProgress func()
+	onDone     func()
+	done       bool
+}
+
+func (r *artifactUploadProgressReader) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	if n > 0 {
+		r.onProgress()
+	}
+	if (r.r.Len() == 0 || err == io.EOF) && !r.done {
+		r.done = true
+		r.onDone()
+	}
+	return n, err
+}
+
+func sleepArtifactChunkUploadRetry(ctx context.Context, d time.Duration) bool {
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-ctx.Done():
+		return false
+	}
+}
+
+func isTemporaryArtifactUploadError(err error) bool {
+	if errors.Is(err, errArtifactChunkUploadStalled) {
+		return true
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	for _, target := range []error{
+		io.EOF,
+		io.ErrUnexpectedEOF,
+		syscall.ECONNABORTED,
+		syscall.ECONNREFUSED,
+		syscall.ECONNRESET,
+		syscall.EPIPE,
+		syscall.ETIMEDOUT,
+	} {
+		if errors.Is(err, target) {
+			return true
+		}
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	var statusErr *request.StatusError
+	if errors.As(err, &statusErr) {
+		switch statusErr.StatusCode {
+		case http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+			return true
+		}
+	}
+	return false
 }
 
 func artifactBuildMetadata(env *cli.Env) map[string]string {
