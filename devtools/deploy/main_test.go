@@ -243,6 +243,42 @@ func TestRunArtifactDeploymentUsesUploadToken(t *testing.T) {
 	}
 }
 
+func TestUploadArtifactChunkAttemptProvidesReplayableBody(t *testing.T) {
+	data := []byte("artifact chunk")
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.GetBody == nil {
+			t.Fatal("GetBody is nil")
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read request body: %v", err)
+		}
+		if !bytes.Equal(body, data) {
+			t.Fatalf("request body = %q, want %q", body, data)
+		}
+
+		replayedBody, err := r.GetBody()
+		if err != nil {
+			t.Fatalf("GetBody: %v", err)
+		}
+		defer replayedBody.Close()
+		replayed, err := io.ReadAll(replayedBody)
+		if err != nil {
+			t.Fatalf("read replayed body: %v", err)
+		}
+		if !bytes.Equal(replayed, data) {
+			t.Fatalf("replayed body = %q, want %q", replayed, data)
+		}
+
+		return jsonResponse(t, http.StatusOK, `{"status":"success"}`), nil
+	})}
+
+	chunk := artifactManifestChunk{Index: 0, Size: int64(len(data)), SHA256: "sha"}
+	if err := uploadArtifactChunkAttempt(context.Background(), client, "token", "https://deploy.test/chunk", chunk, data); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestUploadArtifactFileChunksRetriesTemporaryNetworkError(t *testing.T) {
 	dir := t.TempDir()
 	artifactPath := filepath.Join(dir, "rootfs.erofs")
