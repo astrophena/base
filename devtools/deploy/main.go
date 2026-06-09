@@ -401,24 +401,27 @@ func uploadArtifactChunkAttempt(ctx context.Context, client *http.Client, token,
 	go monitorArtifactChunkUploadProgress(uploadCtx, cancelUpload, stallTimeout, progress, done)
 	defer finishUpload()
 
-	body := &artifactUploadProgressReader{
-		r: bytes.NewReader(data),
-		onProgress: func() {
-			if usesNetworkProgress(client) {
-				return
-			}
-			select {
-			case progress <- struct{}{}:
-			default:
-			}
-		},
-		onDone: finishUpload,
+	newBody := func() io.ReadCloser {
+		return io.NopCloser(&artifactUploadProgressReader{
+			r: bytes.NewReader(data),
+			onProgress: func() {
+				if usesNetworkProgress(client) {
+					return
+				}
+				select {
+				case progress <- struct{}{}:
+				default:
+				}
+			},
+			onDone: finishUpload,
+		})
 	}
-	req, err := http.NewRequestWithContext(uploadCtx, http.MethodPut, chunkURL, body)
+	req, err := http.NewRequestWithContext(uploadCtx, http.MethodPut, chunkURL, newBody())
 	if err != nil {
 		return err
 	}
 	req.ContentLength = int64(len(data))
+	req.GetBody = func() (io.ReadCloser, error) { return newBody(), nil }
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("User-Agent", version.UserAgent())
