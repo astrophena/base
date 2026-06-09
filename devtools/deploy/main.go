@@ -167,10 +167,13 @@ func (a *app) runArtifactDeployment(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	if createResp.UploadID == "" || createResp.UploadToken == "" {
+		return errors.New("artifact upload response missing upload_id or upload_token")
+	}
 
 	present := presentChunkSet(createResp.Present)
 	for _, file := range manifest.Files {
-		if err := a.uploadArtifactFileChunks(ctx, client, token, target, createResp.UploadID, localPaths[file.Path], file, present[file.Path], env.Stderr); err != nil {
+		if err := a.uploadArtifactFileChunks(ctx, client, createResp.UploadToken, target, createResp.UploadID, localPaths[file.Path], file, present[file.Path], env.Stderr); err != nil {
 			return err
 		}
 	}
@@ -178,7 +181,7 @@ func (a *app) runArtifactDeployment(ctx context.Context) error {
 	_, err = request.Make[request.IgnoreResponse](ctx, request.Params{
 		Method:     http.MethodPost,
 		URL:        artifactCompleteURL(a.serverURL, target, createResp.UploadID),
-		Headers:    artifactAuthHeaders(token),
+		Headers:    artifactAuthHeaders(createResp.UploadToken),
 		HTTPClient: client,
 	})
 	return err
@@ -234,8 +237,16 @@ type artifactManifestChunk struct {
 }
 
 type artifactUploadResponse struct {
-	UploadID string           `json:"upload_id"`
-	Present  map[string][]int `json:"present_chunks"`
+	UploadID             string                       `json:"upload_id"`
+	UploadToken          string                       `json:"upload_token"`
+	UploadTokenExpiresAt time.Time                    `json:"upload_token_expires_at"`
+	Present              map[string][]int             `json:"present_chunks"`
+	Files                []artifactUploadResponseFile `json:"files"`
+}
+
+type artifactUploadResponseFile struct {
+	Path   string `json:"path"`
+	Chunks int    `json:"chunks"`
 }
 
 func buildArtifactManifest(paths []string, releaseID string, publicKey ed25519.PublicKey, chunkBytes int64, env *cli.Env) (artifactManifest, map[string]string, error) {
@@ -338,6 +349,7 @@ func (a *app) uploadArtifactFileChunks(ctx context.Context, client *http.Client,
 			Body:   data,
 			Headers: map[string]string{
 				"Authorization":  "Bearer " + token,
+				"Content-Type":   "application/octet-stream",
 				"User-Agent":     version.UserAgent(),
 				"X-Chunk-SHA256": chunk.SHA256,
 			},
