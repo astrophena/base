@@ -11,13 +11,16 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"go.astrophena.name/base/cli"
+	"go.astrophena.name/base/logger"
 	"go.astrophena.name/base/testutil"
 	"go.astrophena.name/base/version"
 )
@@ -100,6 +103,12 @@ func (a *appWithVersionFlag) Run(ctx context.Context) error {
 	}
 	return nil
 }
+
+// durationLoggingApp tests time.Duration replacement by string in JSON logs.
+var durationLoggingApp = cli.AppFunc(func(ctx context.Context) error {
+	logger.Info(ctx, "reticulating splines", slog.Duration("duration", 5*time.Second))
+	return nil
+})
 
 func TestRun(t *testing.T) {
 	t.Run("simple", func(t *testing.T) {
@@ -228,6 +237,18 @@ func TestRun(t *testing.T) {
 				t.Errorf("error must be about creating cpu profile, got: %v", err)
 			}
 		})
+	})
+
+	t.Run("time.Duration is converted to string in JSON logs", func(t *testing.T) {
+		_, stderr, err := runTest(t, durationLoggingApp)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		wantInStderr := `"duration":"5s"`
+		if !strings.Contains(stderr, wantInStderr) {
+			t.Errorf("want %s in stderr, got %s", wantInStderr, stderr)
+		}
 	})
 }
 

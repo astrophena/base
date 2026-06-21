@@ -305,10 +305,20 @@ func newLogger(w io.Writer, level *slog.LevelVar) *logger.Logger {
 	if f, ok := w.(*os.File); ok && IsTerminal(int(f.Fd())) {
 		handler = tint.NewHandler(w, opts)
 	} else {
-		handler = slog.NewJSONHandler(w, &slog.HandlerOptions{Level: l.Level})
+		handler = slog.NewJSONHandler(w, &slog.HandlerOptions{
+			Level:       l.Level,
+			ReplaceAttr: replaceTimeDuration,
+		})
 	}
 	l.Attach(handler)
 	return l
+}
+
+func replaceTimeDuration(groups []string, attr slog.Attr) slog.Attr {
+	if attr.Value.Kind() != slog.KindDuration {
+		return attr
+	}
+	return slog.String(attr.Key, attr.Value.Duration().String())
 }
 
 // IsTerminal reports whether the file descriptor is connected to a terminal.
@@ -380,7 +390,8 @@ func parseDocComment() string {
 			break
 		}
 		if inComment {
-			doc.WriteString(line + "\n")
+			doc.WriteString(line)
+			doc.WriteString("\n")
 		}
 	}
 	if err := s.Err(); err != nil {
