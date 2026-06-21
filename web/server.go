@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"go.astrophena.name/base/ctxkey"
 	"go.astrophena.name/base/logger"
 	"go.astrophena.name/base/syncx"
 	"go.astrophena.name/base/systemd"
@@ -28,13 +29,10 @@ import (
 	"go.astrophena.name/base/web/internal/unionfs"
 )
 
-type serverContextKeyType struct{}
-
-var serverContextKey = serverContextKeyType{}
-
-type connNetworkContextKeyType struct{}
-
-var connNetworkContextKey = connNetworkContextKeyType{}
+var (
+	serverContextKey      = ctxkey.New[*Server]("web.server", nil)
+	connNetworkContextKey = ctxkey.New("web.connNetwork", "tcp")
+)
 
 // Server is used to configure the HTTP server started by
 // [Server.ListenAndServe].
@@ -219,7 +217,7 @@ func (s *Server) trustedProxies() []netip.Prefix {
 }
 
 func (s *Server) isTrustedForwardedSource(r *http.Request, hasAddr bool, addr netip.Addr) bool {
-	if network, _ := r.Context().Value(connNetworkContextKey).(string); network == "unix" {
+	if network := connNetworkContextKey.Value(r.Context()); network == "unix" {
 		return true
 	}
 	if s.listenerNetwork == "unix" {
@@ -319,7 +317,7 @@ func (s *Server) StaticHashName(name string) string {
 // when the function is called outside of a request handler for a server from
 // this package.
 func StaticHashName(ctx context.Context, name string) string {
-	s, ok := ctx.Value(serverContextKey).(*Server)
+	s, ok := serverContextKey.ValueOk(ctx)
 	if !ok {
 		panic("web: StaticHashName called on a context without a server")
 	}
@@ -372,10 +370,10 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		Handler:  s,
 		BaseContext: func(_ net.Listener) context.Context {
 			baseCtx := logger.Put(ctx, baseLogger)
-			return context.WithValue(baseCtx, serverContextKey, s)
+			return serverContextKey.WithValue(baseCtx, s)
 		},
 		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
-			return context.WithValue(ctx, connNetworkContextKey, c.RemoteAddr().Network())
+			return connNetworkContextKey.WithValue(ctx, c.RemoteAddr().Network())
 		},
 	}
 

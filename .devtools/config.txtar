@@ -1,5 +1,7 @@
 -- copyright/exclusions.json --
 [
+  "ctxkey/ctxkey.go",
+  "ctxkey/ctxkey_test.go",
   "web/internal/hashfs/*.go",
   "web/internal/unionfs/*.go",
   "rr/*.go",
