@@ -5,7 +5,6 @@
 package web
 
 import (
-	"context"
 	_ "embed"
 	"encoding/json"
 	"errors"
@@ -15,28 +14,22 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"go.astrophena.name/base/ctxkey"
 	"go.astrophena.name/base/logger"
 	"go.astrophena.name/base/web/internal/components"
 )
 
-type contextKey string
-
-var trustedRequestKey = contextKey("trusted-request")
-
-type trustedRequest struct{}
+var trustedRequestKey = ctxkey.New("web.isTrustedRequest", false)
 
 // IsTrustedRequest reports whether r is a trusted request.
 // A trusted request, when resulting in an error handled by [RespondError], will
 // have its underlying error message exposed to the client in the HTML response.
-func IsTrustedRequest(r *http.Request) bool {
-	_, ok := r.Context().Value(trustedRequestKey).(trustedRequest)
-	return ok
-}
+func IsTrustedRequest(r *http.Request) bool { return trustedRequestKey.Value(r.Context()) }
 
 // TrustRequest marks r as a trusted request (see [IsTrustedRequest]) and returns a new request
 // with the trusted status embedded in its context.
 func TrustRequest(r *http.Request) *http.Request {
-	return r.WithContext(context.WithValue(r.Context(), trustedRequestKey, trustedRequest{}))
+	return r.WithContext(trustedRequestKey.WithValue(r.Context(), true))
 }
 
 // StatusErr is a sentinel error type used to represent HTTP status code errors.

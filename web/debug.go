@@ -180,7 +180,7 @@ func (s *Server) xffDebugHandler() http.Handler {
 			parts = append(parts, item)
 		}
 
-		connNetwork, _ := r.Context().Value(connNetworkContextKey).(string)
+		connNetwork := connNetworkContextKey.Value(r.Context())
 		resp := xffDebugResponse{
 			RemoteAddr:                 r.RemoteAddr,
 			RemoteHost:                 host,

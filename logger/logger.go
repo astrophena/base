@@ -10,11 +10,11 @@ import (
 	"io"
 	"log/slog"
 	"sync"
+
+	"go.astrophena.name/base/ctxkey"
 )
 
-type ctxKey string
-
-const loggerKey ctxKey = "logger"
+var loggerKey = ctxkey.New("logger.Logger", defaultLogger)
 
 // multiHandler fans out log records to multiple handlers.
 type multiHandler struct {
@@ -135,20 +135,13 @@ func newDefaultLogger() *Logger {
 }
 
 // Put returns a new context with the provided [Logger].
-func Put(ctx context.Context, l *Logger) context.Context {
-	return context.WithValue(ctx, loggerKey, l)
-}
+func Put(ctx context.Context, l *Logger) context.Context { return loggerKey.WithValue(ctx, l) }
 
 // Get retrieves the [Logger] from the context.
 //
 // If the context has no [Logger], it returns a default [Logger] that discards all
 // messages.
-func Get(ctx context.Context) *Logger {
-	if l, ok := ctx.Value(loggerKey).(*Logger); ok {
-		return l
-	}
-	return defaultLogger
-}
+func Get(ctx context.Context) *Logger { return loggerKey.Value(ctx) }
 
 // IsDefault returns true if l is the default [Logger].
 func IsDefault(l *Logger) bool { return l == defaultLogger }
@@ -157,12 +150,7 @@ func IsDefault(l *Logger) bool { return l == defaultLogger }
 //
 // If the context has no [Logger], it returns a [slog.LevelVar] for a default
 // [Logger].
-func LevelVar(ctx context.Context) *slog.LevelVar {
-	if l, ok := ctx.Value(loggerKey).(*Logger); ok {
-		return l.Level
-	}
-	return defaultLogger.Level
-}
+func LevelVar(ctx context.Context) *slog.LevelVar { return loggerKey.Value(ctx).Level }
 
 // Debug logs a debug message.
 func Debug(ctx context.Context, msg string, attrs ...slog.Attr) {

@@ -82,6 +82,7 @@ import (
 	"strings"
 	"time"
 
+	"go.astrophena.name/base/ctxkey"
 	"go.astrophena.name/base/logger"
 	"go.astrophena.name/base/syncx"
 	"go.astrophena.name/base/version"
@@ -179,24 +180,19 @@ func (f AppFunc) Run(ctx context.Context) error {
 	return f(ctx)
 }
 
-type ctxKey int
-
-var envKey ctxKey
+var envKey = ctxkey.New[*Env]("cli.Env", nil)
 
 // GetEnv retrieves the application's environment from a context.
 // If the context has no environment, it returns one based on the current OS.
 func GetEnv(ctx context.Context) *Env {
-	e, ok := ctx.Value(envKey).(*Env)
-	if !ok {
-		return OSEnv()
+	if e, ok := envKey.ValueOk(ctx); ok {
+		return e
 	}
-	return e
+	return OSEnv()
 }
 
 // WithEnv returns a new context that carries the provided [Env].
-func WithEnv(ctx context.Context, e *Env) context.Context {
-	return context.WithValue(ctx, envKey, e)
-}
+func WithEnv(ctx context.Context, e *Env) context.Context { return envKey.WithValue(ctx, e) }
 
 // Env encapsulates the application's environment, including arguments,
 // standard I/O streams, and environment variables.

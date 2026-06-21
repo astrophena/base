@@ -239,7 +239,7 @@ func TestServerRealIP(t *testing.T) {
 	req.Header.Set("X-Forwarded-For", "not-an-ip")
 	testutil.AssertEqual(t, "192.0.2.10", s.realIP(req))
 
-	req = req.WithContext(context.WithValue(req.Context(), connNetworkContextKey, "unix"))
+	req = req.WithContext(connNetworkContextKey.WithValue(req.Context(), "unix"))
 	req.RemoteAddr = "@"
 	req.Header.Set("X-Forwarded-For", "203.0.113.44")
 	testutil.AssertEqual(t, "203.0.113.44", s.realIP(req))
