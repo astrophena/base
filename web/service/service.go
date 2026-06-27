@@ -157,8 +157,6 @@ func (a *adapter) Run(ctx context.Context) error {
 			// Only notify systemd if we didn't already do it for the public endpoint.
 			_, hasPublic := a.svc.(PublicService)
 			srv := a.newServer(a.adminAddr, config, !hasPublic, readyWG.Done)
-			// Admin endpoints trust all requests by default.
-			srv.Middleware = append([]web.Middleware{trustAllRequests}, srv.Middleware...)
 			g.Go(func() error { return srv.ListenAndServe(gctx) })
 		}
 	}
@@ -227,11 +225,4 @@ func (a *adapter) runActivityMonitor(ctx context.Context, cancel context.CancelF
 			return
 		}
 	}
-}
-
-func trustAllRequests(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		r = web.TrustRequest(r)
-		next.ServeHTTP(w, r)
-	})
 }
