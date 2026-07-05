@@ -27,9 +27,10 @@ Publish an artifact bundle:
 
 	$ go tool deploy -type artifact dungeon kernel initrd.cpio rootfs.erofs
 
-Artifact uploads create a manifest that lists every file's size, SHA-256, and
-chunk SHA-256 values. The manifest is signed with Ed25519 and deployd verifies
-that signature before publishing the release.
+Artifact uploads default to content-defined chunks so retries and later releases
+send only chunks deployd does not already have. The signed manifest records each
+file's size, SHA-256, chunking contract, and chunk SHA-256 values. Use
+-artifact-upload-mode=fixed for the legacy fixed-size upload protocol.
 
 Artifact release IDs default to the current UTC timestamp in deployd's sortable
 release format, YYYYMMDDHHMMSS. Use -artifact-release-id to provide one
