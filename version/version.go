@@ -24,7 +24,7 @@ type Info struct {
 	Go         string `json:"go"`          // runtime.Version()
 	OS         string `json:"os"`          // runtime.GOOS
 	Arch       string `json:"arch"`        // runtime.GOARCH
-	ModuleName string `json:"module_name"` // set for go.astrophena.name/* repos
+	ModuleName string `json:"module_name"` // set for go.astrophena.name/* and go.home.astrophena.name/* repos
 }
 
 // String implements the [fmt.Stringer] interface.
@@ -39,15 +39,24 @@ func (i Info) String() string {
 		}
 	}
 	if i.Version != "" {
-		sb.WriteString(i.Name + " " + ver)
+		sb.WriteString(i.Name)
+		sb.WriteString(" ")
+		sb.WriteString(ver)
 	} else {
 		sb.WriteString(i.Name)
 	}
 	sb.WriteString("\n")
 
-	sb.WriteString("built with Go " + i.Go + ", " + i.OS + "/" + i.Arch + "\n")
+	sb.WriteString("built with Go ")
+	sb.WriteString(i.Go)
+	sb.WriteString(", ")
+	sb.WriteString(i.OS)
+	sb.WriteString("/")
+	sb.WriteString(i.Arch)
+	sb.WriteString("\n")
 	if i.BuiltAt != "" {
-		sb.WriteString("built at " + i.BuiltAt)
+		sb.WriteString("built at ")
+		sb.WriteString(i.BuiltAt)
 	}
 	sb.WriteString("\n")
 
@@ -93,7 +102,7 @@ func loadInfo(buildinfo func() (*debug.BuildInfo, bool)) Info {
 		i.Version = "git"
 	}
 
-	if strings.HasPrefix(bi.Path, "go.astrophena.name") {
+	if strings.HasPrefix(bi.Path, "go.astrophena.name") || strings.HasPrefix(bi.Path, "go.home.astrophena.name") {
 		if parts := strings.Split(bi.Path, "/"); len(parts) > 1 {
 			i.ModuleName = parts[1]
 		}
