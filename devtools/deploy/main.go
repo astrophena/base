@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"go.astrophena.name/base/cli"
+	"go.astrophena.name/base/devtools/deploy/cdc"
 	"go.astrophena.name/base/request"
 	"go.astrophena.name/base/version"
 )
@@ -38,6 +39,8 @@ import (
 const (
 	defaultArtifactChunkBytes = 64 << 20
 	maxArtifactChunkBytes     = 64 << 20
+	artifactUploadModeCDC     = "cdc"
+	artifactUploadModeFixed   = "fixed"
 
 	artifactChunkUploadAttempts   = 4
 	artifactChunkUploadRetryDelay = 5 * time.Second
@@ -63,6 +66,7 @@ type app struct {
 	serverURL             string
 	tokenAudience         string
 	artifactChunkBytes    int64
+	artifactUploadMode    string
 	artifactReleaseID     string
 	artifactSigningKeyEnv string
 }
@@ -72,6 +76,7 @@ func (a *app) Flags(fs *flag.FlagSet) {
 	fs.StringVar(&a.serverURL, "server-url", "https://deploy.astrophena.name", "The `URL` of the deployment server.")
 	fs.StringVar(&a.tokenAudience, "token-audience", "astrophena.name", "The `audience` for the OIDC token.")
 	fs.Int64Var(&a.artifactChunkBytes, "artifact-chunk-size", defaultArtifactChunkBytes, "Artifact upload chunk `bytes`.")
+	fs.StringVar(&a.artifactUploadMode, "artifact-upload-mode", artifactUploadModeCDC, "Artifact upload mode: `cdc` or `fixed`.")
 	fs.StringVar(&a.artifactReleaseID, "artifact-release-id", "", "Artifact release ID. Defaults to current UTC timestamp.")
 	fs.StringVar(&a.artifactSigningKeyEnv, "artifact-signing-key-env", "DEPLOY_ARTIFACT_SIGNING_KEY", "Environment variable containing the Ed25519 artifact signing key.")
 }
@@ -137,8 +142,18 @@ func (a *app) runArtifactDeployment(ctx context.Context) error {
 	if len(env.Args) < 2 {
 		return fmt.Errorf("%w: want artifact target and one or more file paths", cli.ErrInvalidArgs)
 	}
-	if a.artifactChunkBytes <= 0 || a.artifactChunkBytes > maxArtifactChunkBytes {
-		return fmt.Errorf("%w: artifact chunk size must be between 1 and %d bytes", cli.ErrInvalidArgs, maxArtifactChunkBytes)
+	uploadMode := a.artifactUploadMode
+	if uploadMode == "" {
+		uploadMode = artifactUploadModeCDC
+	}
+	switch uploadMode {
+	case artifactUploadModeCDC:
+	case artifactUploadModeFixed:
+		if a.artifactChunkBytes <= 0 || a.artifactChunkBytes > maxArtifactChunkBytes {
+			return fmt.Errorf("%w: artifact chunk size must be between 1 and %d bytes", cli.ErrInvalidArgs, maxArtifactChunkBytes)
+		}
+	default:
+		return fmt.Errorf("%w: artifact upload mode must be cdc or fixed", cli.ErrInvalidArgs)
 	}
 	target := env.Args[0]
 	paths := env.Args[1:]
@@ -156,7 +171,7 @@ func (a *app) runArtifactDeployment(ctx context.Context) error {
 	if releaseID == "" {
 		releaseID = time.Now().UTC().Format("20060102150405")
 	}
-	manifest, localPaths, err := buildArtifactManifest(paths, releaseID, privateKey.Public().(ed25519.PublicKey), a.artifactChunkBytes, env)
+	manifest, localPaths, err := buildArtifactManifest(ctx, paths, releaseID, privateKey.Public().(ed25519.PublicKey), uploadMode, a.artifactChunkBytes, env)
 	if err != nil {
 		return err
 	}
@@ -186,8 +201,12 @@ func (a *app) runArtifactDeployment(ctx context.Context) error {
 	}
 
 	present := presentChunkSet(createResp.Present)
+	var uploaded map[string]bool
+	if manifest.Chunking != nil {
+		uploaded = make(map[string]bool)
+	}
 	for _, file := range manifest.Files {
-		if err := a.uploadArtifactFileChunks(ctx, client, createResp.UploadToken, target, createResp.UploadID, localPaths[file.Path], file, present[file.Path], env.Stderr); err != nil {
+		if err := a.uploadArtifactFileChunks(ctx, client, createResp.UploadToken, target, createResp.UploadID, localPaths[file.Path], file, present[file.Path], uploaded, env.Stderr); err != nil {
 			return err
 		}
 	}
@@ -233,6 +252,7 @@ type artifactManifest struct {
 	ReleaseID        string                 `json:"release_id"`
 	Files            []artifactManifestFile `json:"files"`
 	Build            map[string]string      `json:"build,omitempty"`
+	Chunking         *cdc.Chunking          `json:"chunking,omitempty"`
 	PatchPaths       []string               `json:"patch_paths,omitempty"`
 	SigningPublicKey string                 `json:"signing_public_key"`
 }
@@ -244,11 +264,7 @@ type artifactManifestFile struct {
 	Chunks []artifactManifestChunk `json:"chunks"`
 }
 
-type artifactManifestChunk struct {
-	Index  int    `json:"index"`
-	Size   int64  `json:"size"`
-	SHA256 string `json:"sha256"`
-}
+type artifactManifestChunk = cdc.ManifestChunk
 
 type artifactUploadResponse struct {
 	UploadID             string                       `json:"upload_id"`
@@ -263,11 +279,18 @@ type artifactUploadResponseFile struct {
 	Chunks int    `json:"chunks"`
 }
 
-func buildArtifactManifest(paths []string, releaseID string, publicKey ed25519.PublicKey, chunkBytes int64, env *cli.Env) (artifactManifest, map[string]string, error) {
+func buildArtifactManifest(ctx context.Context, paths []string, releaseID string, publicKey ed25519.PublicKey, uploadMode string, chunkBytes int64, env *cli.Env) (artifactManifest, map[string]string, error) {
+	if uploadMode == "" {
+		uploadMode = artifactUploadModeCDC
+	}
 	manifest := artifactManifest{
 		ReleaseID:        releaseID,
 		Build:            artifactBuildMetadata(env),
 		SigningPublicKey: base64.StdEncoding.EncodeToString(publicKey),
+	}
+	if uploadMode == artifactUploadModeCDC {
+		chunking := cdc.DefaultChunking()
+		manifest.Chunking = &chunking
 	}
 	localPaths := make(map[string]string)
 	seen := make(map[string]bool)
@@ -280,7 +303,7 @@ func buildArtifactManifest(paths []string, releaseID string, publicKey ed25519.P
 			return artifactManifest{}, nil, fmt.Errorf("duplicate artifact file name %q", name)
 		}
 		seen[name] = true
-		file, err := artifactManifestForFile(filePath, name, chunkBytes)
+		file, err := artifactManifestForFile(ctx, filePath, name, uploadMode, chunkBytes)
 		if err != nil {
 			return artifactManifest{}, nil, err
 		}
@@ -293,7 +316,7 @@ func buildArtifactManifest(paths []string, releaseID string, publicKey ed25519.P
 	return manifest, localPaths, nil
 }
 
-func artifactManifestForFile(filePath, name string, chunkBytes int64) (artifactManifestFile, error) {
+func artifactManifestForFile(ctx context.Context, filePath, name, uploadMode string, chunkBytes int64) (artifactManifestFile, error) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return artifactManifestFile{}, err
@@ -308,6 +331,18 @@ func artifactManifestForFile(filePath, name string, chunkBytes int64) (artifactM
 	}
 	if info.Size() == 0 {
 		return artifactManifestFile{}, fmt.Errorf("artifact file %q is empty", filePath)
+	}
+	if uploadMode == artifactUploadModeCDC {
+		file, err := cdc.WalkChunks(ctx, f, nil)
+		if err != nil {
+			return artifactManifestFile{}, err
+		}
+		return artifactManifestFile{
+			Path:   name,
+			Size:   file.Size,
+			SHA256: file.SHA256,
+			Chunks: file.Chunks,
+		}, nil
 	}
 
 	buf := make([]byte, chunkBytes)
@@ -337,7 +372,7 @@ func artifactManifestForFile(filePath, name string, chunkBytes int64) (artifactM
 	return file, nil
 }
 
-func (a *app) uploadArtifactFileChunks(ctx context.Context, client *http.Client, token, target, uploadID, localPath string, file artifactManifestFile, present map[int]bool, stderr io.Writer) error {
+func (a *app) uploadArtifactFileChunks(ctx context.Context, client *http.Client, token, target, uploadID, localPath string, file artifactManifestFile, present map[int]bool, uploaded map[string]bool, stderr io.Writer) error {
 	f, err := os.Open(localPath)
 	if err != nil {
 		return err
@@ -350,6 +385,11 @@ func (a *app) uploadArtifactFileChunks(ctx context.Context, client *http.Client,
 			offset += chunk.Size
 			continue
 		}
+		chunkHash := cdc.NormalizeSHA256(chunk.SHA256)
+		if uploaded != nil && uploaded[chunkHash] {
+			offset += chunk.Size
+			continue
+		}
 		data := make([]byte, int(chunk.Size))
 		if _, err := f.ReadAt(data, offset); err != nil {
 			return fmt.Errorf("reading chunk %d from %s: %w", chunk.Index, localPath, err)
@@ -359,6 +399,9 @@ func (a *app) uploadArtifactFileChunks(ctx context.Context, client *http.Client,
 		}
 		if err := a.uploadArtifactChunk(ctx, client, token, target, uploadID, file.Path, chunk, data, stderr); err != nil {
 			return err
+		}
+		if uploaded != nil {
+			uploaded[chunkHash] = true
 		}
 		offset += chunk.Size
 	}

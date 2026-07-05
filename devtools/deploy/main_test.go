@@ -18,11 +18,15 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"go.astrophena.name/base/cli"
+	"go.astrophena.name/base/devtools/deploy/cdc"
+	"go.astrophena.name/base/testutil"
 )
 
 func TestBuildArtifactManifest(t *testing.T) {
@@ -46,7 +50,7 @@ func TestBuildArtifactManifest(t *testing.T) {
 		}
 		return ""
 	}}
-	manifest, localPaths, err := buildArtifactManifest([]string{rootfs, kernel}, "20260608120000", publicKey, 6, env)
+	manifest, localPaths, err := buildArtifactManifest(context.Background(), []string{rootfs, kernel}, "20260608120000", publicKey, artifactUploadModeFixed, 6, env)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,6 +60,9 @@ func TestBuildArtifactManifest(t *testing.T) {
 	}
 	if manifest.Build["sha"] != "deadbeef" {
 		t.Fatalf("Build[sha] = %q", manifest.Build["sha"])
+	}
+	if manifest.Chunking != nil {
+		t.Fatalf("Chunking = %#v, want nil", manifest.Chunking)
 	}
 	if got, want := manifest.SigningPublicKey, base64.StdEncoding.EncodeToString(publicKey); got != want {
 		t.Fatalf("SigningPublicKey = %q, want %q", got, want)
@@ -74,6 +81,43 @@ func TestBuildArtifactManifest(t *testing.T) {
 	}
 	if got, want := localPaths["kernel"], kernel; got != want {
 		t.Fatalf("localPaths[kernel] = %q, want %q", got, want)
+	}
+}
+
+func TestBuildArtifactManifestCDC(t *testing.T) {
+	dir := t.TempDir()
+	rootfs := filepath.Join(dir, "rootfs.erofs")
+	content := []byte("rootfs bytes")
+	if err := os.WriteFile(rootfs, content, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	publicKey, _, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, _, err := buildArtifactManifest(context.Background(), []string{rootfs}, "20260608120000", publicKey, artifactUploadModeCDC, 0, &cli.Env{
+		Getenv: func(string) string { return "" },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if manifest.Chunking == nil {
+		t.Fatal("Chunking is nil")
+	}
+	if err := cdc.ValidateChunking(*manifest.Chunking); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := manifest.Files[0].SHA256, cdc.SHA256HexBytes(content); got != want {
+		t.Fatalf("file SHA256 = %q, want %q", got, want)
+	}
+	if got, want := manifest.Files[0].Chunks, []artifactManifestChunk{{
+		Index:  0,
+		Size:   int64(len(content)),
+		SHA256: cdc.SHA256HexBytes(content),
+	}}; !slices.Equal(got, want) {
+		t.Fatalf("chunks = %#v, want %#v", got, want)
 	}
 }
 
@@ -116,9 +160,7 @@ func TestArtifactSigningKey(t *testing.T) {
 
 func TestPresentChunkSet(t *testing.T) {
 	present := presentChunkSet(map[string][]int{"rootfs.erofs": {0, 2}})
-	if !present["rootfs.erofs"][0] || present["rootfs.erofs"][1] || !present["rootfs.erofs"][2] {
-		t.Fatalf("unexpected present set: %#v", present)
-	}
+	testutil.AssertEqual(t, present, map[string]map[int]bool{"rootfs.erofs": {0: true, 2: true}})
 }
 
 func TestRunArtifactDeploymentUsesUploadToken(t *testing.T) {
@@ -223,6 +265,7 @@ func TestRunArtifactDeploymentUsesUploadToken(t *testing.T) {
 		serverURL:             "https://deploy.test",
 		tokenAudience:         "aud",
 		artifactChunkBytes:    4,
+		artifactUploadMode:    artifactUploadModeFixed,
 		artifactReleaseID:     "20260608120000",
 		artifactSigningKeyEnv: "KEY",
 	}
@@ -240,6 +283,40 @@ func TestRunArtifactDeploymentUsesUploadToken(t *testing.T) {
 	}
 	if !completed {
 		t.Fatal("upload was not completed")
+	}
+}
+
+func TestUploadArtifactFileChunksSkipsPresentAndDuplicateCDCChunks(t *testing.T) {
+	dir := t.TempDir()
+	artifactPath := filepath.Join(dir, "rootfs.erofs")
+	if err := os.WriteFile(artifactPath, []byte("aaaabbbbcccc"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var paths []string
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		paths = append(paths, r.URL.Path)
+		return jsonResponse(t, http.StatusOK, `{"status":"success"}`), nil
+	})}
+
+	shaA := strings.Repeat("a", 64)
+	shaB := strings.Repeat("b", 64)
+	file := artifactManifestFile{
+		Path: "rootfs.erofs",
+		Chunks: []artifactManifestChunk{
+			{Index: 0, Size: 4, SHA256: shaA},
+			{Index: 1, Size: 4, SHA256: shaB},
+			{Index: 2, Size: 4, SHA256: shaB},
+		},
+	}
+	uploaded := make(map[string]bool)
+	a := &app{serverURL: "https://deploy.test"}
+	if err := a.uploadArtifactFileChunks(context.Background(), client, "token", "dungeon", "upload-1", artifactPath, file, map[int]bool{0: true}, uploaded, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	testutil.AssertEqual(t, paths, []string{"/artifact/dungeon/uploads/upload-1/files/rootfs.erofs/chunks/1"})
+	if uploaded[shaA] || !uploaded[shaB] {
+		t.Fatalf("uploaded set = %#v", uploaded)
 	}
 }
 
@@ -305,7 +382,7 @@ func TestUploadArtifactFileChunksRetriesTemporaryNetworkError(t *testing.T) {
 			SHA256: "sha",
 		}},
 	}
-	if err := a.uploadArtifactFileChunks(context.Background(), client, "token", "dungeon", "upload-1", artifactPath, file, nil, io.Discard); err != nil {
+	if err := a.uploadArtifactFileChunks(context.Background(), client, "token", "dungeon", "upload-1", artifactPath, file, nil, nil, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if attempts != 2 {
@@ -345,7 +422,7 @@ func TestUploadArtifactFileChunksRetriesStalledUpload(t *testing.T) {
 			SHA256: "sha",
 		}},
 	}
-	if err := a.uploadArtifactFileChunks(context.Background(), client, "token", "dungeon", "upload-1", artifactPath, file, nil, io.Discard); err != nil {
+	if err := a.uploadArtifactFileChunks(context.Background(), client, "token", "dungeon", "upload-1", artifactPath, file, nil, nil, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	if attempts != 2 {
@@ -355,7 +432,7 @@ func TestUploadArtifactFileChunksRetriesStalledUpload(t *testing.T) {
 
 func mustMarshalManifest(t *testing.T, releaseID, path string, publicKey ed25519.PublicKey) []byte {
 	t.Helper()
-	manifest, _, err := buildArtifactManifest([]string{path}, releaseID, publicKey, 4, &cli.Env{
+	manifest, _, err := buildArtifactManifest(context.Background(), []string{path}, releaseID, publicKey, artifactUploadModeFixed, 4, &cli.Env{
 		Getenv: func(string) string { return "" },
 	})
 	if err != nil {
