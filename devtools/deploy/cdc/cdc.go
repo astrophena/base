@@ -118,8 +118,12 @@ type File struct {
 // until fn returns.
 func WalkChunks(ctx context.Context, r io.Reader, fn func(DataChunk) error) (File, error) {
 	fileHash := sha256.New()
-	c := chunker.NewWithBoundaries(io.TeeReader(r, fileHash), Polynomial, MinSize, MaxSize)
-	c.SetAverageBits(AvgBits)
+	c := chunker.New(
+		io.TeeReader(r, fileHash),
+		Polynomial,
+		chunker.WithBoundaries(MinSize, MaxSize),
+		chunker.WithAverageBits(AvgBits),
+	)
 
 	buf := make([]byte, 0, MaxSize)
 	var file File
