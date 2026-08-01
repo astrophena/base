@@ -5,7 +5,7 @@ go 1.26.5
 require (
 	github.com/a-h/templ v0.3.1020
 	github.com/go4org/hashtriemap v0.0.0-20251130024219-545ba229f689
-	github.com/lmittmann/tint v1.1.3
+	github.com/lmittmann/tint v1.2.0
 	github.com/restic/chunker v0.5.0
 	golang.org/x/sync v0.22.0
 	golang.org/x/term v0.45.0
