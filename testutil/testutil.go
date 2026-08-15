@@ -8,6 +8,7 @@ package testutil
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -19,22 +20,56 @@ import (
 	"go.astrophena.name/base/txtar"
 )
 
-// AssertEqual fails the test if got is not deeply equal to want.
-// It prints both values for easy comparison upon failure.
+// AssertEqual fails the test if got is not deeply equal to want. Failures are
+// reported as a line-oriented diff so that large strings and values remain
+// readable.
 func AssertEqual(t *testing.T, got, want any) {
 	t.Helper()
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("values are not equal:\ngot:  %#v\nwant: %#v", got, want)
+		t.Fatalf("values differ (-want +got):\n%s", valueDiff(want, got))
 	}
+}
+
+func valueDiff(want, got any) string {
+	wantText, gotText := fmt.Sprintf("%#v\n", want), fmt.Sprintf("%#v\n", got)
+	if reflect.TypeOf(want) != reflect.TypeOf(got) {
+		wantText = fmt.Sprintf("%T: %#v\n", want, want)
+		gotText = fmt.Sprintf("%T: %#v\n", got, got)
+	}
+
+	wantString, wantIsString := want.(string)
+	gotString, gotIsString := got.(string)
+	if wantIsString && gotIsString && (strings.Contains(wantString, "\n") || strings.Contains(gotString, "\n")) {
+		wantText, gotText = wantString, gotString
+	}
+
+	wantBytes, wantIsBytes := want.([]byte)
+	gotBytes, gotIsBytes := got.([]byte)
+	if wantIsBytes && gotIsBytes && (bytes.Contains(wantBytes, []byte("\n")) || bytes.Contains(gotBytes, []byte("\n"))) {
+		wantText, gotText = string(wantBytes), string(gotBytes)
+	}
+
+	return lineDiff([]byte(wantText), []byte(gotText))
+}
+
+func globFiles(pattern string) ([]string, error) {
+	matches, err := filepath.Glob(pattern)
+	if err != nil {
+		return nil, fmt.Errorf("filepath.Glob(%q): %w", pattern, err)
+	}
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("filepath.Glob(%q) matched no files", pattern)
+	}
+	return matches, nil
 }
 
 // Run runs a subtest for each file that matches the provided glob pattern.
 // The subtest name is the file's path relative to its directory.
 func Run(t *testing.T, glob string, f func(t *testing.T, match string)) {
 	t.Helper()
-	matches, err := filepath.Glob(glob)
+	matches, err := globFiles(glob)
 	if err != nil {
-		t.Fatalf("filepath.Glob(%q): %v", glob, err)
+		t.Fatal(err)
 	}
 
 	for _, match := range matches {
@@ -70,7 +105,7 @@ func RunGolden(t *testing.T, glob string, f func(t *testing.T, match string) []b
 		}
 
 		if !bytes.Equal(got, want) {
-			t.Fatalf("golden file mismatch. got:\n%s", got)
+			t.Fatalf("golden file %q differs (-want +got):\n%s", goldenFile, lineDiff(want, got))
 		}
 	})
 }

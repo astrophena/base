@@ -79,7 +79,7 @@ func TestKey(t *testing.T) {
 	ctx = k7.WithValue(ctx, nil)
 	testutil.AssertEqual(t, k7.Has(ctx), true)
 	testutil.AssertEqual(t, k7.Value(ctx), nil)
-	k8 := New[error]("error", io.EOF)
+	k8 := New("error", io.EOF)
 	testutil.AssertEqual(t, k8.Has(ctx), false)
 	testutil.AssertEqual(t, k8.Value(ctx), io.EOF)
 	ctx = k8.WithValue(ctx, nil)

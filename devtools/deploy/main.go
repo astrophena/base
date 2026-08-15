@@ -636,8 +636,7 @@ func isTemporaryArtifactUploadError(err error) bool {
 	if errors.As(err, &netErr) && netErr.Timeout() {
 		return true
 	}
-	var statusErr *request.StatusError
-	if errors.As(err, &statusErr) {
+	if statusErr, ok := errors.AsType[*request.StatusError](err); ok {
 		switch statusErr.StatusCode {
 		case http.StatusRequestTimeout, http.StatusTooManyRequests, http.StatusInternalServerError, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
 			return true

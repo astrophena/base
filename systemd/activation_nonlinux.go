@@ -14,6 +14,6 @@ import (
 
 var errNotSupported = errors.New("systemd: socket activation is not supported on this platform")
 
-func socket(ctx context.Context, name string) (net.Listener, error) {
+func socket(_ context.Context, _ string) (net.Listener, error) {
 	return nil, errNotSupported
 }
