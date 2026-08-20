@@ -1,6 +1,6 @@
 module go.astrophena.name/base
 
-go 1.26.6
+go 1.27
 
 require (
 	github.com/a-h/templ v0.3.1020
@@ -22,13 +22,12 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/natefinch/atomic v1.0.1 // indirect
-	golang.org/x/exp/typeparams v0.0.0-20251219203646-944ab1f22d93 // indirect
-	golang.org/x/mod v0.31.0 // indirect
-	golang.org/x/net v0.51.0 // indirect
+	golang.org/x/exp/typeparams v0.0.0-20260820142414-ca536658362e // indirect
+	golang.org/x/mod v0.40.0 // indirect
+	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/tools v0.40.0 // indirect
-	golang.org/x/tools/go/expect v0.1.1-deprecated // indirect
-	honnef.co/go/tools v0.6.1 // indirect
+	golang.org/x/tools v0.49.0 // indirect
+	honnef.co/go/tools v0.7.0-0.dev.0.20260820131157-4e4b91490a70 // indirect
 )
 
 tool (
