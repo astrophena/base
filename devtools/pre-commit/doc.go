@@ -3,23 +3,15 @@
 // license that can be found in the LICENSE.md file.
 
 /*
-Pre-commit installs and runs a Git pre-commit hook.
+Pre-commit runs repository checks. Outside CI, its first run also installs a
+.git/hooks/pre-commit script that runs the same checks before each commit.
 
-On its first run in a non-CI environment, it automatically creates the
-.git/hooks/pre-commit script. This script simply calls 'go tool pre-commit'
-again, ensuring that the checks are run on every subsequent commit.
+Run it from a repository root. Configure checks in the pre-commit.json entry
+of .devtools/config.txtar. Each JSON object has these fields:
 
-Checks are configured through a .devtools/config.txtar file in the project's root
-directory. This file is a txtar archive and can contain a pre-commit.json file.
-The pre-commit.json file should contain a JSON array of check objects, each with
-the following fields:
-
-  - run: A string array where the first element is the command to run and the
-    rest are its arguments (e.g., ["go", "test", "./..."]).
-  - skip_in_ci: A boolean that, if true, causes the check to be skipped when
-    the CI environment variable is set to "true".
-  - only_in_ci: A boolean that, if true, causes the check to run only when the
-    CI environment variable is set to "true".
+  - run: command and arguments, such as ["go", "test", "./..."].
+  - skip_in_ci: skip when CI=true.
+  - only_in_ci: run only when CI=true.
 */
 package main
 

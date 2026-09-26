@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
@@ -106,16 +107,18 @@ func TestBuildArtifactManifestCDC(t *testing.T) {
 	if manifest.Chunking == nil {
 		t.Fatal("Chunking is nil")
 	}
-	if err := cdc.ValidateChunking(*manifest.Chunking); err != nil {
+	if err := manifest.Chunking.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := manifest.Files[0].SHA256, cdc.SHA256HexBytes(content); got != want {
+	sum := sha256.Sum256(content)
+	wantHash := hex.EncodeToString(sum[:])
+	if got, want := manifest.Files[0].SHA256, wantHash; got != want {
 		t.Fatalf("file SHA256 = %q, want %q", got, want)
 	}
-	if got, want := manifest.Files[0].Chunks, []artifactManifestChunk{{
+	if got, want := manifest.Files[0].Chunks, []cdc.Chunk{{
 		Index:  0,
 		Size:   int64(len(content)),
-		SHA256: cdc.SHA256HexBytes(content),
+		SHA256: wantHash,
 	}}; !slices.Equal(got, want) {
 		t.Fatalf("chunks = %#v, want %#v", got, want)
 	}
@@ -303,7 +306,7 @@ func TestUploadArtifactFileChunksSkipsPresentAndDuplicateCDCChunks(t *testing.T)
 	shaB := strings.Repeat("b", 64)
 	file := artifactManifestFile{
 		Path: "rootfs.erofs",
-		Chunks: []artifactManifestChunk{
+		Chunks: []cdc.Chunk{
 			{Index: 0, Size: 4, SHA256: shaA},
 			{Index: 1, Size: 4, SHA256: shaB},
 			{Index: 2, Size: 4, SHA256: shaB},
@@ -350,7 +353,7 @@ func TestUploadArtifactChunkAttemptProvidesReplayableBody(t *testing.T) {
 		return jsonResponse(t, http.StatusOK, `{"status":"success"}`), nil
 	})}
 
-	chunk := artifactManifestChunk{Index: 0, Size: int64(len(data)), SHA256: "sha"}
+	chunk := cdc.Chunk{Index: 0, Size: int64(len(data)), SHA256: "sha"}
 	if err := uploadArtifactChunkAttempt(context.Background(), client, "token", "https://deploy.test/chunk", chunk, data); err != nil {
 		t.Fatal(err)
 	}
@@ -376,7 +379,7 @@ func TestUploadArtifactFileChunksRetriesTemporaryNetworkError(t *testing.T) {
 	a := &app{serverURL: "https://deploy.test"}
 	file := artifactManifestFile{
 		Path: "rootfs.erofs",
-		Chunks: []artifactManifestChunk{{
+		Chunks: []cdc.Chunk{{
 			Index:  0,
 			Size:   int64(len("artifact")),
 			SHA256: "sha",
@@ -416,7 +419,7 @@ func TestUploadArtifactFileChunksRetriesStalledUpload(t *testing.T) {
 	a := &app{serverURL: "https://deploy.test"}
 	file := artifactManifestFile{
 		Path: "rootfs.erofs",
-		Chunks: []artifactManifestChunk{{
+		Chunks: []cdc.Chunk{{
 			Index:  0,
 			Size:   int64(len("artifact")),
 			SHA256: "sha",

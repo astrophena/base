@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -15,10 +16,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"go.astrophena.name/base/cli"
-	"go.astrophena.name/base/devtools/internal"
 	"go.astrophena.name/base/logger"
 	"go.astrophena.name/base/txtar"
 )
@@ -92,7 +91,9 @@ func (a *app) Flags(fs *flag.FlagSet) {
 }
 
 func (a *app) Run(ctx context.Context) error {
-	internal.EnsureRoot()
+	if _, err := os.Stat(".git"); err != nil {
+		return fmt.Errorf("run from the repository root: %w", err)
+	}
 
 	cfg, err := parseConfig(".")
 	if err != nil {
@@ -104,21 +105,11 @@ func (a *app) Run(ctx context.Context) error {
 		return err
 	}
 
-	return processFiles(ctx, cfg, files, a.dry, a.check, getModTime)
+	return processFiles(ctx, cfg, files, a.dry, a.check)
 }
 
-type modTimeFunc func(path string) (time.Time, error)
-
-func getModTime(path string) (time.Time, error) {
-	info, err := os.Stat(path)
-	if err != nil {
-		return time.Time{}, err
-	}
-	return info.ModTime(), nil
-}
-
-func processFiles(ctx context.Context, cfg *config, files []string, dry, check bool, modTimeFn modTimeFunc) error {
-	var foundMissing bool
+func processFiles(ctx context.Context, cfg *config, files []string, dry, check bool) error {
+	var missing bool
 
 	for _, path := range files {
 		if cfg.isExcluded(path) {
@@ -135,51 +126,44 @@ func processFiles(ctx context.Context, cfg *config, files []string, dry, check b
 		}
 
 		content, err := os.ReadFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
 		if err != nil {
 			return err
 		}
 
 		hasHeader := bytes.HasPrefix(content, []byte(header))
-
-		// If in check mode, we just check and record if a header is missing.
 		if check {
 			if !hasHeader {
 				logger.Info(ctx, "file is missing copyright header", slog.String("path", path))
-				foundMissing = true
+				missing = true
 			}
 			continue
 		}
 
-		// If not in check mode and the header is already present, skip.
 		if hasHeader {
 			continue
 		}
 
-		// If not in check mode and the header is missing, add it.
-		modtime, err := modTimeFn(path)
+		info, err := os.Stat(path)
 		if err != nil {
 			return err
 		}
-		year := modtime.Year()
-		hdr := fmt.Sprintf(tmpl, year)
+		hdr := fmt.Sprintf(tmpl, info.ModTime().Year())
 
 		if dry {
 			logger.Info(ctx, "would add copyright header", slog.String("path", path), slog.String("header", hdr))
 			continue
 		}
 
-		var buf bytes.Buffer
-		buf.WriteString(hdr)
-		buf.Write(content)
-		if err := os.WriteFile(path, buf.Bytes(), 0o644); err != nil {
+		if err := os.WriteFile(path, append([]byte(hdr), content...), 0o644); err != nil {
 			return err
 		}
 	}
 
-	// If in check mode and we found files with missing headers, return an error
-	// to produce a non-zero exit code.
-	if check && foundMissing {
-		return fmt.Errorf("found one or more files missing copyright headers")
+	if check && missing {
+		return errors.New("found one or more files missing copyright headers")
 	}
 
 	return nil

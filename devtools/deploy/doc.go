@@ -3,55 +3,39 @@
 // license that can be found in the LICENSE.md file.
 
 /*
-Deploy sends deployment artifacts to deployd.
-
-It supports two deployment shapes:
-
-  - site and service deployments upload one multipart archive to /site or
-    /service.
-  - artifact deployments publish one or more large files through deployd's
-    chunked /artifact API, with a signed manifest for client-side verification.
-
-How this works (private links):
-
-  - https://github.com/astrophena/infra/tree/master/services/deployd
+Deploy sends site, service, and artifact releases to deployd.
 
 # Usage
 
-Deploy a site or service archive:
+Upload a site or service archive:
 
 	$ go tool deploy -type site astrophena.name archive.tar.gz
 	$ go tool deploy -type service payday archive.tar.gz
 
-Publish an artifact bundle:
+Publish signed artifacts:
 
 	$ go tool deploy -type artifact dungeon kernel initrd.cpio rootfs.erofs
 
-Artifact uploads default to content-defined chunks so retries and later releases
-send only chunks deployd does not already have. The signed manifest records each
-file's size, SHA-256, chunking contract, and chunk SHA-256 values. Use
--artifact-upload-mode=fixed for the legacy fixed-size upload protocol.
+Artifact uploads use content-defined chunks by default. Deployd reuses chunks
+it already has. Use -artifact-upload-mode=fixed for the older fixed-size format.
 
-Artifact release IDs default to the current UTC timestamp in deployd's sortable
-release format, YYYYMMDDHHMMSS. Use -artifact-release-id to provide one
-explicitly, for example when retrying a workflow run.
+Artifact release IDs default to the current UTC time in YYYYMMDDHHMMSS format.
+Use -artifact-release-id to reuse an ID when retrying a release.
 
-# Environment Variables
+# Environment
 
-This tool requires the following environment variables to be set by the
-GitHub Actions runner:
+GitHub Actions must provide:
 
-  - ACTIONS_ID_TOKEN_REQUEST_URL: The URL to request the OIDC token from.
-  - ACTIONS_ID_TOKEN_REQUEST_TOKEN: The bearer token for authenticating the
-    OIDC token request.
+  - ACTIONS_ID_TOKEN_REQUEST_URL: OIDC token request URL.
+  - ACTIONS_ID_TOKEN_REQUEST_TOKEN: token for that request.
 
-Artifact deployments also require an Ed25519 private key. By default the tool
-reads DEPLOY_ARTIFACT_SIGNING_KEY; override the variable name with
--artifact-signing-key-env. The key may be one of:
+Artifact deployments also need an Ed25519 private key in
+DEPLOY_ARTIFACT_SIGNING_KEY. Use -artifact-signing-key-env to read another
+variable. Accepted formats are:
 
-  - PKCS#8 PEM, such as output from openssl genpkey -algorithm Ed25519.
-  - base64 raw Ed25519 private key bytes.
-  - base64 or hex Ed25519 seed bytes.
+  - PKCS#8 PEM.
+  - base64 private key bytes.
+  - base64 or hex seed bytes.
 */
 package main
 
