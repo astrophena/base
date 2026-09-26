@@ -3,26 +3,18 @@
 // license that can be found in the LICENSE.md file.
 
 /*
-Addcopyright adds a copyright header to specified files.
+Addcopyright adds missing copyright headers to Git-listed files with configured
+extensions.
 
-It recursively walks through the current directory and checks if a file,
-based on its extension, should have a copyright header. If the header is
-missing, the tool prepends a copyright notice based on a template.
+Run it from a repository root. Use -check to report missing headers without
+writing files, or -dry to show the headers it would add.
 
-The tool is configured through a .devtools/config.txtar file in the project's
-root directory. This file is a txtar archive and can contain the following
-files:
+Configure it in .devtools/config.txtar:
 
-  - copyright/exclusions.json: A JSON array of file paths or glob patterns to
-    exclude from processing. Entries are matched against file paths using
-    [filepath.Match] glob patterns first, then as suffix matches.
-  - copyright/template.{ext}: A template for the copyright header for a specific
-    file extension (e.g., template.go). The template can contain a
-    formatting verb %d for the year.
-  - copyright/header.{ext}: A string that identifies an existing copyright header
-    for a specific file extension (e.g., header.go). If a file
-    starts with this string, it's considered to already have a
-    copyright header, and the tool will not add a new one.
+  - copyright/template.{ext} is a header template. Use %d for the file's
+    modification year.
+  - copyright/header.{ext} identifies an existing header by its prefix.
+  - copyright/exclusions.json lists glob patterns or path suffixes to skip.
 */
 package main
 

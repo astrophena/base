@@ -18,7 +18,6 @@ import (
 	"unicode/utf8"
 
 	"go.astrophena.name/base/cli"
-	"go.astrophena.name/base/devtools/internal"
 	"go.astrophena.name/base/txtar"
 
 	"golang.org/x/term"
@@ -51,12 +50,12 @@ func loadChecks() ([]check, error) {
 	return checks, nil
 }
 
-func (c check) run() error {
+func (c check) run(ctx context.Context) error {
 	if len(c.Run) == 0 {
 		return errors.New("check has an empty 'run' field")
 	}
 	var buf bytes.Buffer
-	cmd := exec.Command(c.Run[0], c.Run[1:]...)
+	cmd := exec.CommandContext(ctx, c.Run[0], c.Run[1:]...)
 	cmd.Stdout = &buf
 	cmd.Stderr = &buf
 	if err := cmd.Run(); err != nil {
@@ -89,7 +88,9 @@ func clipCommand(termWidth int, prefix, command string) string {
 func main() { cli.Main(cli.AppFunc(realMain)) }
 
 func realMain(ctx context.Context) error {
-	internal.EnsureRoot()
+	if _, err := os.Stat(".git"); err != nil {
+		return fmt.Errorf("run from the repository root: %w", err)
+	}
 	env := cli.GetEnv(ctx)
 
 	checks, err := loadChecks()
@@ -142,7 +143,7 @@ func realMain(ctx context.Context) error {
 			fmt.Fprintf(env.Stdout, "\r\033[K%s", progressMsg)
 		}
 
-		if err := c.run(); err != nil {
+		if err := c.run(ctx); err != nil {
 			if !isCI {
 				fmt.Fprintln(env.Stdout) // Newline after progress message on failure.
 			}

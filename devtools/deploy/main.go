@@ -37,10 +37,9 @@ import (
 )
 
 const (
-	defaultArtifactChunkBytes = 64 << 20
-	maxArtifactChunkBytes     = 64 << 20
-	artifactUploadModeCDC     = "cdc"
-	artifactUploadModeFixed   = "fixed"
+	maxArtifactChunkBytes   = 64 << 20
+	artifactUploadModeCDC   = "cdc"
+	artifactUploadModeFixed = "fixed"
 
 	artifactChunkUploadAttempts   = 4
 	artifactChunkUploadRetryDelay = 5 * time.Second
@@ -61,8 +60,7 @@ type tokenResponse struct {
 }
 
 type app struct {
-	// configuration
-	typ                   string // service, site, or artifact
+	typ                   string
 	serverURL             string
 	tokenAudience         string
 	artifactChunkBytes    int64
@@ -75,7 +73,7 @@ func (a *app) Flags(fs *flag.FlagSet) {
 	fs.StringVar(&a.typ, "type", "site", "Whether to deploy `site, service, or artifact`.")
 	fs.StringVar(&a.serverURL, "server-url", "https://deploy.astrophena.name", "The `URL` of the deployment server.")
 	fs.StringVar(&a.tokenAudience, "token-audience", "astrophena.name", "The `audience` for the OIDC token.")
-	fs.Int64Var(&a.artifactChunkBytes, "artifact-chunk-size", defaultArtifactChunkBytes, "Artifact upload chunk `bytes`.")
+	fs.Int64Var(&a.artifactChunkBytes, "artifact-chunk-size", maxArtifactChunkBytes, "Fixed-size artifact upload chunk `bytes`.")
 	fs.StringVar(&a.artifactUploadMode, "artifact-upload-mode", artifactUploadModeCDC, "Artifact upload mode: `cdc` or `fixed`.")
 	fs.StringVar(&a.artifactReleaseID, "artifact-release-id", "", "Artifact release ID. Defaults to current UTC timestamp.")
 	fs.StringVar(&a.artifactSigningKeyEnv, "artifact-signing-key-env", "DEPLOY_ARTIFACT_SIGNING_KEY", "Environment variable containing the Ed25519 artifact signing key.")
@@ -142,11 +140,7 @@ func (a *app) runArtifactDeployment(ctx context.Context) error {
 	if len(env.Args) < 2 {
 		return fmt.Errorf("%w: want artifact target and one or more file paths", cli.ErrInvalidArgs)
 	}
-	uploadMode := a.artifactUploadMode
-	if uploadMode == "" {
-		uploadMode = artifactUploadModeCDC
-	}
-	switch uploadMode {
+	switch a.artifactUploadMode {
 	case artifactUploadModeCDC:
 	case artifactUploadModeFixed:
 		if a.artifactChunkBytes <= 0 || a.artifactChunkBytes > maxArtifactChunkBytes {
@@ -171,7 +165,7 @@ func (a *app) runArtifactDeployment(ctx context.Context) error {
 	if releaseID == "" {
 		releaseID = time.Now().UTC().Format("20060102150405")
 	}
-	manifest, localPaths, err := buildArtifactManifest(ctx, paths, releaseID, privateKey.Public().(ed25519.PublicKey), uploadMode, a.artifactChunkBytes, env)
+	manifest, localPaths, err := buildArtifactManifest(ctx, paths, releaseID, privateKey.Public().(ed25519.PublicKey), a.artifactUploadMode, a.artifactChunkBytes, env)
 	if err != nil {
 		return err
 	}
@@ -258,42 +252,32 @@ type artifactManifest struct {
 }
 
 type artifactManifestFile struct {
-	Path   string                  `json:"path"`
-	Size   int64                   `json:"size"`
-	SHA256 string                  `json:"sha256"`
-	Chunks []artifactManifestChunk `json:"chunks"`
+	Path   string      `json:"path"`
+	Size   int64       `json:"size"`
+	SHA256 string      `json:"sha256"`
+	Chunks []cdc.Chunk `json:"chunks"`
 }
-
-type artifactManifestChunk = cdc.ManifestChunk
 
 type artifactUploadResponse struct {
-	UploadID             string                       `json:"upload_id"`
-	UploadToken          string                       `json:"upload_token"`
-	UploadTokenExpiresAt time.Time                    `json:"upload_token_expires_at"`
-	Present              map[string][]int             `json:"present_chunks"`
-	Files                []artifactUploadResponseFile `json:"files"`
-}
-
-type artifactUploadResponseFile struct {
-	Path   string `json:"path"`
-	Chunks int    `json:"chunks"`
+	UploadID    string           `json:"upload_id"`
+	UploadToken string           `json:"upload_token"`
+	Present     map[string][]int `json:"present_chunks"`
 }
 
 func buildArtifactManifest(ctx context.Context, paths []string, releaseID string, publicKey ed25519.PublicKey, uploadMode string, chunkBytes int64, env *cli.Env) (artifactManifest, map[string]string, error) {
-	if uploadMode == "" {
-		uploadMode = artifactUploadModeCDC
-	}
 	manifest := artifactManifest{
 		ReleaseID:        releaseID,
+		Files:            make([]artifactManifestFile, 0, len(paths)),
 		Build:            artifactBuildMetadata(env),
+		PatchPaths:       make([]string, 0, len(paths)),
 		SigningPublicKey: base64.StdEncoding.EncodeToString(publicKey),
 	}
 	if uploadMode == artifactUploadModeCDC {
 		chunking := cdc.DefaultChunking()
 		manifest.Chunking = &chunking
 	}
-	localPaths := make(map[string]string)
-	seen := make(map[string]bool)
+	localPaths := make(map[string]string, len(paths))
+	seen := make(map[string]bool, len(paths))
 	for _, filePath := range paths {
 		name := filepath.Base(filePath)
 		if name == "." || name == string(filepath.Separator) || name == "" {
@@ -322,6 +306,7 @@ func artifactManifestForFile(ctx context.Context, filePath, name, uploadMode str
 		return artifactManifestFile{}, err
 	}
 	defer f.Close()
+
 	info, err := f.Stat()
 	if err != nil {
 		return artifactManifestFile{}, err
@@ -333,7 +318,7 @@ func artifactManifestForFile(ctx context.Context, filePath, name, uploadMode str
 		return artifactManifestFile{}, fmt.Errorf("artifact file %q is empty", filePath)
 	}
 	if uploadMode == artifactUploadModeCDC {
-		file, err := cdc.WalkChunks(ctx, f, nil)
+		file, err := cdc.Split(ctx, f)
 		if err != nil {
 			return artifactManifestFile{}, err
 		}
@@ -346,7 +331,7 @@ func artifactManifestForFile(ctx context.Context, filePath, name, uploadMode str
 	}
 
 	buf := make([]byte, chunkBytes)
-	fullHash := sha256.New()
+	hash := sha256.New()
 	file := artifactManifestFile{Path: name, Size: info.Size()}
 	for index := 0; ; index++ {
 		n, readErr := io.ReadFull(f, buf)
@@ -356,19 +341,19 @@ func artifactManifestForFile(ctx context.Context, filePath, name, uploadMode str
 		if n == 0 {
 			break
 		}
-		chunkBytes := buf[:n]
-		fullHash.Write(chunkBytes)
-		chunkHash := sha256.Sum256(chunkBytes)
-		file.Chunks = append(file.Chunks, artifactManifestChunk{
+		data := buf[:n]
+		hash.Write(data)
+		sum := sha256.Sum256(data)
+		file.Chunks = append(file.Chunks, cdc.Chunk{
 			Index:  index,
 			Size:   int64(n),
-			SHA256: hex.EncodeToString(chunkHash[:]),
+			SHA256: hex.EncodeToString(sum[:]),
 		})
 		if readErr != nil {
 			break
 		}
 	}
-	file.SHA256 = hex.EncodeToString(fullHash.Sum(nil))
+	file.SHA256 = hex.EncodeToString(hash.Sum(nil))
 	return file, nil
 }
 
@@ -385,7 +370,7 @@ func (a *app) uploadArtifactFileChunks(ctx context.Context, client *http.Client,
 			offset += chunk.Size
 			continue
 		}
-		chunkHash := cdc.NormalizeSHA256(chunk.SHA256)
+		chunkHash := strings.ToLower(chunk.SHA256)
 		if uploaded != nil && uploaded[chunkHash] {
 			offset += chunk.Size
 			continue
@@ -408,7 +393,7 @@ func (a *app) uploadArtifactFileChunks(ctx context.Context, client *http.Client,
 	return nil
 }
 
-func (a *app) uploadArtifactChunk(ctx context.Context, client *http.Client, token, target, uploadID, filePath string, chunk artifactManifestChunk, data []byte, stderr io.Writer) error {
+func (a *app) uploadArtifactChunk(ctx context.Context, client *http.Client, token, target, uploadID, filePath string, chunk cdc.Chunk, data []byte, stderr io.Writer) error {
 	chunkURL := artifactChunkURL(a.serverURL, target, uploadID, filePath, chunk.Index)
 	var lastErr error
 	for attempt := 1; attempt <= artifactChunkUploadAttempts; attempt++ {
@@ -432,7 +417,7 @@ func (a *app) uploadArtifactChunk(ctx context.Context, client *http.Client, toke
 	return lastErr
 }
 
-func uploadArtifactChunkAttempt(ctx context.Context, client *http.Client, token, chunkURL string, chunk artifactManifestChunk, data []byte) error {
+func uploadArtifactChunkAttempt(ctx context.Context, client *http.Client, token, chunkURL string, chunk cdc.Chunk, data []byte) error {
 	uploadCtx, cancelUpload := context.WithCancelCause(ctx)
 	defer cancelUpload(nil)
 
@@ -441,11 +426,11 @@ func uploadArtifactChunkAttempt(ctx context.Context, client *http.Client, token,
 	var doneOnce sync.Once
 	finishUpload := func() { doneOnce.Do(func() { close(done) }) }
 	stallTimeout := artifactChunkUploadStallTimeout
-	go monitorArtifactChunkUploadProgress(uploadCtx, cancelUpload, stallTimeout, progress, done)
+	go watchUploadProgress(uploadCtx, cancelUpload, stallTimeout, progress, done)
 	defer finishUpload()
 
 	newBody := func() io.ReadCloser {
-		return io.NopCloser(&artifactUploadProgressReader{
+		return io.NopCloser(&progressReader{
 			r: bytes.NewReader(data),
 			onProgress: func() {
 				if usesNetworkProgress(client) {
@@ -530,7 +515,7 @@ func useNetworkProgress(client *http.Client, onProgress func()) {
 		if err != nil {
 			return nil, err
 		}
-		return artifactUploadProgressConn{Conn: conn, onProgress: onProgress}, nil
+		return progressConn{Conn: conn, onProgress: onProgress}, nil
 	}
 	if t.DialTLSContext != nil {
 		dialTLSContext := t.DialTLSContext
@@ -539,18 +524,18 @@ func useNetworkProgress(client *http.Client, onProgress func()) {
 			if err != nil {
 				return nil, err
 			}
-			return artifactUploadProgressConn{Conn: conn, onProgress: onProgress}, nil
+			return progressConn{Conn: conn, onProgress: onProgress}, nil
 		}
 	}
 	client.Transport = t
 }
 
-type artifactUploadProgressConn struct {
+type progressConn struct {
 	net.Conn
 	onProgress func()
 }
 
-func (c artifactUploadProgressConn) Write(p []byte) (int, error) {
+func (c progressConn) Write(p []byte) (int, error) {
 	n, err := c.Conn.Write(p)
 	if n > 0 {
 		c.onProgress()
@@ -558,7 +543,7 @@ func (c artifactUploadProgressConn) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func monitorArtifactChunkUploadProgress(ctx context.Context, cancel context.CancelCauseFunc, stallTimeout time.Duration, progress <-chan struct{}, done <-chan struct{}) {
+func watchUploadProgress(ctx context.Context, cancel context.CancelCauseFunc, stallTimeout time.Duration, progress <-chan struct{}, done <-chan struct{}) {
 	timer := time.NewTimer(stallTimeout)
 	defer timer.Stop()
 	for {
@@ -582,14 +567,14 @@ func monitorArtifactChunkUploadProgress(ctx context.Context, cancel context.Canc
 	}
 }
 
-type artifactUploadProgressReader struct {
+type progressReader struct {
 	r          *bytes.Reader
 	onProgress func()
 	onDone     func()
 	done       bool
 }
 
-func (r *artifactUploadProgressReader) Read(p []byte) (int, error) {
+func (r *progressReader) Read(p []byte) (int, error) {
 	n, err := r.r.Read(p)
 	if n > 0 {
 		r.onProgress()
@@ -716,9 +701,9 @@ func decodeArtifactSigningKey(text string) ([]byte, error) {
 }
 
 func presentChunkSet(present map[string][]int) map[string]map[int]bool {
-	sets := make(map[string]map[int]bool)
+	sets := make(map[string]map[int]bool, len(present))
 	for file, chunks := range present {
-		set := make(map[int]bool)
+		set := make(map[int]bool, len(chunks))
 		for _, index := range chunks {
 			set[index] = true
 		}

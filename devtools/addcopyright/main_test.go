@@ -84,8 +84,11 @@ func TestProcessFiles(t *testing.T) {
 		}
 		sort.Strings(files)
 
-		modTimeFn := func(_ string) (time.Time, error) {
-			return time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), nil
+		modTime := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		for _, path := range files {
+			if err := os.Chtimes(path, modTime, modTime); err != nil {
+				t.Fatal(err)
+			}
 		}
 
 		var logBuf bytes.Buffer
@@ -101,7 +104,7 @@ func TestProcessFiles(t *testing.T) {
 		l.Attach(slog.NewTextHandler(&logBuf, opts))
 		ctx := logger.Put(t.Context(), l)
 
-		err = processFiles(ctx, cfg, files, dry, check, modTimeFn)
+		err = processFiles(ctx, cfg, files, dry, check)
 
 		// Build a txtar from source files to capture the result.
 		ar := new(txtar.Archive)
@@ -183,5 +186,16 @@ func TestIsExcluded(t *testing.T) {
 			cfg := &config{exclusions: tc.exclusions}
 			testutil.AssertEqual(t, cfg.isExcluded(tc.path), tc.want)
 		})
+	}
+}
+
+func TestProcessFilesSkipsDeletedFile(t *testing.T) {
+	cfg := &config{
+		headers:   map[string]string{".go": "// ©"},
+		templates: map[string]string{".go": "// © %d\n"},
+	}
+	path := filepath.Join(t.TempDir(), "deleted.go")
+	if err := processFiles(t.Context(), cfg, []string{path}, false, true); err != nil {
+		t.Fatal(err)
 	}
 }
