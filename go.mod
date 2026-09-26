@@ -9,6 +9,7 @@ require (
 	github.com/restic/chunker v0.5.0
 	golang.org/x/sync v0.22.0
 	golang.org/x/term v0.45.0
+	rsc.io/markdown v0.0.0-20241212154241-6bf72452917f
 )
 
 require (
@@ -26,6 +27,7 @@ require (
 	golang.org/x/mod v0.40.0 // indirect
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	golang.org/x/tools v0.49.0 // indirect
 	honnef.co/go/tools v0.7.0-0.dev.0.20260820131157-4e4b91490a70 // indirect
 )

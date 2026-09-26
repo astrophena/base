@@ -1,0 +1,11 @@
+httprr trace v1
+226 38
+POST https://api.telegram.org/botEXPUNGED/sendMessage HTTP/1.1
+Host: api.telegram.org
+User-Agent: Go-http-client/1.1
+Content-Length: 52
+Content-Type: application/json
+
+{"chat_id":"-3735928559","text":"Hello, world!\n\n"}HTTP/2.0 200 OK
+Content-Length: 0
+
