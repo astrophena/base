@@ -19,10 +19,12 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"go.astrophena.name/base/ctxkey"
 	"go.astrophena.name/base/logger"
+	"go.astrophena.name/base/metrics"
 	"go.astrophena.name/base/syncx"
 	"go.astrophena.name/base/systemd"
 	"go.astrophena.name/base/web/internal/hashfs"
@@ -73,6 +75,8 @@ type Server struct {
 	// If nil, 127.0.0.0/8 is trusted by default. If empty but non-nil,
 	// X-Forwarded-For is ignored.
 	TrustedProxies []netip.Prefix
+	// MetricsEndpoint labels this server's metrics. It defaults to "server".
+	MetricsEndpoint string
 
 	handler syncx.Lazy[*handler]
 
@@ -102,14 +106,17 @@ type Middleware func(http.Handler) http.Handler
 // statusRecorder captures the HTTP status code and response size.
 type statusRecorder struct {
 	http.ResponseWriter
-	status int
-	size   int
+	status   int
+	size     int
+	onHijack func(net.Conn) net.Conn
 }
 
 // WriteHeader captures the status code before writing it to the underlying
 // ResponseWriter.
 func (r *statusRecorder) WriteHeader(status int) {
-	r.status = status
+	if status == http.StatusSwitchingProtocols || status >= 200 {
+		r.status = status
+	}
 	r.ResponseWriter.WriteHeader(status)
 }
 
@@ -134,9 +141,31 @@ func (r *statusRecorder) Flush() {
 // Hijack implements the [http.Hijacker] interface.
 func (r *statusRecorder) Hijack() (net.Conn, *bufio.ReadWriter, error) {
 	if hijacker, ok := r.ResponseWriter.(http.Hijacker); ok {
-		return hijacker.Hijack()
+		conn, rw, err := hijacker.Hijack()
+		if err == nil && r.status == 0 {
+			r.status = http.StatusSwitchingProtocols
+		}
+		if err == nil && r.onHijack != nil {
+			conn = r.onHijack(conn)
+		}
+		return conn, rw, err
 	}
 	return nil, nil, errors.New("hijacking is not supported for this connection")
+}
+
+type trackedConn struct {
+	net.Conn
+	onClose func()
+	once    sync.Once
+	err     error
+}
+
+func (c *trackedConn) Close() error {
+	c.once.Do(func() {
+		c.err = c.Conn.Close()
+		c.onClose()
+	})
+	return c.err
 }
 
 func (s *Server) logRequest(next http.Handler) http.Handler {
@@ -156,15 +185,45 @@ func (s *Server) logRequest(next http.Handler) http.Handler {
 			Level:  l.Level,
 		})
 		r = r.WithContext(ctx)
+		_, route := s.Mux.Handler(r)
+		if route == "" {
+			route = "unmatched"
+		}
+		endpoint, method := s.metricsEndpoint(), metricMethod(r.Method)
+		mw := metrics.Get(ctx)
+		mw.Adjust(inFlight, 1, endpoint, method, route)
 
 		recorder := &statusRecorder{ResponseWriter: w}
+		completed := false
+		complete := func() {
+			if completed {
+				return
+			}
+			completed = true
+			if recorder.status == 0 {
+				recorder.status = http.StatusOK
+			}
+			elapsed := time.Since(start)
+			mw.Adjust(inFlight, -1, endpoint, method, route)
+			s.recordRequest(ctx, endpoint, method, route, recorder.status, recorder.size, elapsed)
+			logger.Info(ctx, "handled request",
+				slog.Int("status", recorder.status),
+				slog.Int("size", recorder.size),
+				slog.Duration("duration", elapsed),
+			)
+		}
+		recorder.onHijack = func(conn net.Conn) net.Conn {
+			complete()
+			mw.Add(connectionsHijacked, 1, endpoint)
+			mw.Adjust(hijackedOpen, 1, endpoint)
+			start := time.Now()
+			return &trackedConn{Conn: conn, onClose: func() {
+				mw.Adjust(hijackedOpen, -1, endpoint)
+				mw.Observe(hijackedDuration, time.Since(start).Seconds(), endpoint, method, route)
+			}}
+		}
+		defer complete()
 		next.ServeHTTP(recorder, r)
-
-		logger.Info(ctx, "handled request",
-			slog.Int("status", recorder.status),
-			slog.Int("size", recorder.size),
-			slog.Duration("duration", time.Since(start)),
-		)
 	})
 }
 
@@ -324,7 +383,8 @@ func StaticHashName(ctx context.Context, name string) string {
 	return s.StaticHashName(name)
 }
 
-// ListenAndServe starts the HTTP server that can be stopped by canceling ctx.
+// ListenAndServe starts the HTTP server. Canceling ctx stops HTTP serving.
+// A handler owns any connection it hijacks and must close it itself.
 func (s *Server) ListenAndServe(ctx context.Context) error {
 	var l net.Listener
 	var err error
@@ -365,6 +425,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 	s.listenerNetwork = l.Addr().Network()
 
 	baseLogger := logger.Get(ctx)
+	mw := metrics.Get(ctx)
+	endpoint := s.metricsEndpoint()
 	httpSrv := &http.Server{
 		ErrorLog: slog.NewLogLogger(baseLogger.Handler(), slog.LevelError),
 		Handler:  s,
@@ -374,6 +436,17 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 		},
 		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
 			return connNetworkContextKey.WithValue(ctx, c.RemoteAddr().Network())
+		},
+		ConnState: func(_ net.Conn, state http.ConnState) {
+			switch state {
+			case http.StateNew:
+				mw.Add(connectionsAccepted, 1, endpoint)
+				mw.Adjust(connectionsOpen, 1, endpoint)
+			case http.StateClosed:
+				mw.Adjust(connectionsOpen, -1, endpoint)
+			case http.StateHijacked:
+				mw.Adjust(connectionsOpen, -1, endpoint)
+			}
 		},
 	}
 

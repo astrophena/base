@@ -12,11 +12,13 @@ import (
 	"io/fs"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"go.astrophena.name/base/cli"
+	"go.astrophena.name/base/metrics"
 	"go.astrophena.name/base/web"
 
 	"golang.org/x/sync/errgroup"
@@ -48,6 +50,12 @@ type PublicService interface {
 // AdminService is implemented by services that expose an admin/internal endpoint.
 type AdminService interface {
 	AdminEndpoint(ctx context.Context) (*EndpointConfig, error)
+}
+
+// MetricService registers application metrics before endpoints and workers start.
+// The same registry is available through [metrics.Get] in their contexts.
+type MetricService interface {
+	RegisterMetrics(context.Context, *metrics.Registry) error
 }
 
 // StatefulService is implemented by services that require a persistent state directory.
@@ -123,6 +131,16 @@ func (a *adapter) Run(ctx context.Context) error {
 	if s, ok := a.svc.(StatefulService); ok {
 		s.SetStateDir(a.stateDir)
 	}
+	r := new(metrics.Registry)
+	if err := web.RegisterMetrics(r); err != nil {
+		return fmt.Errorf("register web metrics: %w", err)
+	}
+	ctx = metrics.Put(ctx, r)
+	if s, ok := a.svc.(MetricService); ok {
+		if err := s.RegisterMetrics(ctx, r); err != nil {
+			return fmt.Errorf("register service metrics: %w", err)
+		}
+	}
 
 	a.lastActivity.Store(time.Now().Unix())
 
@@ -134,6 +152,7 @@ func (a *adapter) Run(ctx context.Context) error {
 
 	g, gctx := errgroup.WithContext(ctx)
 	var readyWG sync.WaitGroup
+	var publicServer, adminServer *web.Server
 
 	if s, ok := a.svc.(PublicService); ok {
 		config, err := s.PublicEndpoint(gctx)
@@ -142,8 +161,7 @@ func (a *adapter) Run(ctx context.Context) error {
 		}
 		if config != nil {
 			readyWG.Add(1)
-			srv := a.newServer(a.addr, config, true, readyWG.Done)
-			g.Go(func() error { return srv.ListenAndServe(gctx) })
+			publicServer = a.newServer(a.addr, config, "public", true, readyWG.Done)
 		}
 	}
 
@@ -153,12 +171,23 @@ func (a *adapter) Run(ctx context.Context) error {
 			return fmt.Errorf("configuring admin endpoint: %w", err)
 		}
 		if config != nil {
+			if config.Mux == nil {
+				config.Mux = http.NewServeMux()
+			}
+			if err := mountMetrics(config.Mux, config.Debuggable, r); err != nil {
+				return err
+			}
 			readyWG.Add(1)
 			// Only notify systemd if we didn't already do it for the public endpoint.
 			_, hasPublic := a.svc.(PublicService)
-			srv := a.newServer(a.adminAddr, config, !hasPublic, readyWG.Done)
-			g.Go(func() error { return srv.ListenAndServe(gctx) })
+			adminServer = a.newServer(a.adminAddr, config, "admin", !hasPublic, readyWG.Done)
 		}
+	}
+	if publicServer != nil {
+		g.Go(func() error { return publicServer.ListenAndServe(gctx) })
+	}
+	if adminServer != nil {
+		g.Go(func() error { return adminServer.ListenAndServe(gctx) })
 	}
 
 	if s, ok := a.svc.(cli.App); ok {
@@ -178,7 +207,7 @@ func (a *adapter) Run(ctx context.Context) error {
 	return waitErr
 }
 
-func (a *adapter) newServer(addr string, config *EndpointConfig, notify bool, readyFunc func()) *web.Server {
+func (a *adapter) newServer(addr string, config *EndpointConfig, endpoint string, notify bool, readyFunc func()) *web.Server {
 	middleware := append([]web.Middleware{a.activityTracker}, config.Middleware...)
 
 	return &web.Server{
@@ -190,9 +219,22 @@ func (a *adapter) newServer(addr string, config *EndpointConfig, notify bool, re
 		CrossOriginProtection: config.CrossOriginProtection,
 		CSP:                   config.CSP,
 		TrustedProxies:        config.TrustedProxies,
+		MetricsEndpoint:       endpoint,
 		NotifySystemd:         notify,
 		Ready:                 readyFunc,
 	}
+}
+
+func mountMetrics(mux *http.ServeMux, debuggable bool, r *metrics.Registry) error {
+	_, pattern := mux.Handler(&http.Request{Method: http.MethodGet, URL: &url.URL{Path: "/debug/metrics"}})
+	if pattern == "GET /debug/metrics" || pattern == "/debug/metrics" {
+		return fmt.Errorf("admin endpoint already handles /debug/metrics")
+	}
+	mux.Handle("GET /debug/metrics", r.Handler())
+	if debuggable {
+		web.Debugger(mux).Link("/debug/metrics", "Metrics")
+	}
+	return nil
 }
 
 func (a *adapter) activityTracker(next http.Handler) http.Handler {

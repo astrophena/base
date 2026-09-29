@@ -14,6 +14,17 @@ interfaces:
 
 To run the service, call [Run] in its main function.
 
+# Metrics
+
+Run creates a metrics registry for the service. Implement [MetricService] to
+add your own metrics. Use metrics.Get(ctx) to record values in an endpoint or
+worker. GET /debug/metrics serves them on the admin endpoint, even if the
+debug page is off. Admin middleware also applies to this route.
+
+Scraping a socket-activated service starts it. Scrape on demand if it should
+sleep. Values reset when the process restarts. HTTP request time starts after
+activation; measure startup delay and queue time at the reverse proxy.
+
 # Deployment and Routing
 
 Services MUST be fronted by a reverse proxy (such as Caddy or nginx).
