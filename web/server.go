@@ -380,9 +380,8 @@ func StaticHashName(ctx context.Context, name string) string {
 	return s.StaticHashName(name)
 }
 
-// ListenAndServe serves HTTP until ctx is canceled or the server fails.
-// It returns nil after a clean shutdown. A handler must close any connection
-// it hijacks; shutdown does not close hijacked connections.
+// ListenAndServe starts the HTTP server. Canceling ctx stops HTTP serving.
+// A handler owns any connection it hijacks and must close it itself.
 func (s *Server) ListenAndServe(ctx context.Context) error {
 	var l net.Listener
 	var err error
