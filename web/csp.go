@@ -12,7 +12,7 @@ import (
 	"sync"
 )
 
-// CSP source constants.
+// Common CSP source values.
 const (
 	CSPSelf         = "'self'"
 	CSPNone         = "'none'"
@@ -32,8 +32,8 @@ var defaultCSP = CSP{
 	BlockAllMixedContent: true,
 }.Finalize()
 
-// CSP represents a Content Security Policy.
-// The zero value is an empty policy.
+// CSP holds the directives for a Content Security Policy. Empty fields are
+// omitted. The zero value produces an empty header value.
 //
 // See https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy.
 type CSP struct {
@@ -102,18 +102,16 @@ func (p CSP) compute() string {
 	return strings.Join(directives, "; ")
 }
 
-// Finalize computes and caches the string representation of the policy.
-// CSPs are intended to be immutable; Finalize should be called after a policy
-// is fully constructed.
+// Finalize returns a copy with its header value cached. Call it after setting
+// the policy fields. [CSPMux.Handle] calls Finalize for you.
 func (p CSP) Finalize() CSP {
 	s := p.compute()
 	p.str = &s
 	return p
 }
 
-// CSPMux is a multiplexer for Content Security Policies.
-// It matches the URL of each incoming request against a list of registered
-// patterns and returns the policy for the pattern that most closely matches the URL.
+// CSPMux selects a Content Security Policy using [http.ServeMux] patterns.
+// Create one with [NewCSPMux].
 type CSPMux struct {
 	mu  sync.RWMutex
 	mux *http.ServeMux
@@ -128,8 +126,8 @@ func NewCSPMux() *CSPMux {
 	}
 }
 
-// Handle registers the CSP for the given pattern.
-// If a policy already exists for pattern, Handle panics.
+// Handle registers a policy for pattern. It panics if the pattern is invalid,
+// conflicts with another pattern, or is already registered.
 func (mux *CSPMux) Handle(pattern string, policy CSP) {
 	mux.mu.Lock()
 	defer mux.mu.Unlock()
@@ -143,9 +141,8 @@ func (mux *CSPMux) Handle(pattern string, policy CSP) {
 	mux.m[pattern] = policy.Finalize()
 }
 
-// PolicyFor returns the CSP for the given request.
-// It finds the best matching pattern and returns its policy.
-// If no pattern matches, it returns a zero CSP and false.
+// PolicyFor returns the policy for the best matching pattern. It returns a
+// zero CSP and false when no pattern matches.
 func (mux *CSPMux) PolicyFor(r *http.Request) (CSP, bool) {
 	mux.mu.RLock()
 	defer mux.mu.RUnlock()
