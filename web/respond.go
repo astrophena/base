@@ -21,18 +21,17 @@ import (
 
 var trustedRequestKey = ctxkey.New("web.isTrustedRequest", false)
 
-// IsTrustedRequest reports whether r is a trusted request.
-// A trusted request, when resulting in an error handled by [RespondError], will
-// have its underlying error message exposed to the client in the HTML response.
+// IsTrustedRequest reports whether [TrustRequest] marked r as trusted. For a
+// trusted request, [RespondError] shows the error and stack trace in HTML.
 func IsTrustedRequest(r *http.Request) bool { return trustedRequestKey.Value(r.Context()) }
 
-// TrustRequest marks r as a trusted request (see [IsTrustedRequest]) and returns a new request
-// with the trusted status embedded in its context.
+// TrustRequest returns a copy of r marked as trusted. [RespondError] shows
+// details for trusted requests. It does not change [RespondJSONError].
 func TrustRequest(r *http.Request) *http.Request {
 	return r.WithContext(trustedRequestKey.WithValue(r.Context(), true))
 }
 
-// StatusErr is a sentinel error type used to represent HTTP status code errors.
+// StatusErr lets an error select an HTTP status code.
 type StatusErr int
 
 // Error implements the [error] interface.
@@ -52,10 +51,8 @@ type errorResponse struct {
 	Error  string `json:"error"`
 }
 
-// RespondJSON marshals the provided response object as JSON and writes it to
-// the [http.ResponseWriter].
-// It sets the Content-Type header to application/json before marshalling.
-// In case of marshalling errors, it writes an internal server error with the error message.
+// RespondJSON writes response as JSON. If encoding fails, it writes HTTP 500
+// and includes the encoding error in the response.
 func RespondJSON(w http.ResponseWriter, response any) { respondJSON(w, response, false) }
 
 func respondJSON(w http.ResponseWriter, response any, wroteStatus bool) {
@@ -75,37 +72,28 @@ func respondJSON(w http.ResponseWriter, response any, wroteStatus bool) {
 	w.Write([]byte("\n"))
 }
 
-// RespondError writes an error response in HTML format to w and logs the error
-// using [logger.Error] if error is [ErrInternalServerError].
+// RespondError writes an HTML error page. It logs HTTP 500 errors.
 //
-// If the error is a [StatusErr] or wraps it, it extracts the HTTP status code and
-// sets the response status code accordingly. Otherwise, it sets the response
-// status code to [http.StatusInternalServerError].
+// A [StatusErr] anywhere in err sets the HTTP status. Other errors use HTTP 500.
 //
-// If the request is marked as trusted (see [IsTrustedRequest] and [TrustRequest]),
-// the original error message will be included in the HTML response.
+// Trusted requests show the error and stack trace. Other requests show only
+// the status page. See [TrustRequest].
 //
-// You can wrap any error with [fmt.Errorf] to create a [StatusErr] and set a
-// specific HTTP status code:
+// Wrap a StatusErr to set a specific status:
 //
-//	// This will set the status code to 404 (Not Found).
 //	web.RespondError(w, r, fmt.Errorf("resource %w", web.ErrNotFound))
 func RespondError(w http.ResponseWriter, r *http.Request, err error) {
 	respondError(false, w, r, err)
 }
 
-// RespondJSONError writes an error response in JSON format to w and logs the
-// error using [logger.Error] if error is [ErrInternalServerError].
+// RespondJSONError writes a JSON error response. It logs HTTP 500 errors.
 //
-// If the error is a [StatusErr] or wraps it, it extracts the HTTP status code
-// and sets the response status code accordingly. Otherwise, it sets the
-// response status code to [http.StatusInternalServerError]. The error message
-// is always included in the JSON response.
+// A [StatusErr] anywhere in err sets the HTTP status. Other errors use HTTP 500.
+// The JSON always includes err.Error(), even for untrusted requests. Avoid
+// passing sensitive details to this function.
 //
-// You can wrap any error with [fmt.Errorf] to create a [StatusErr] and set a
-// specific HTTP status code:
+// Wrap a StatusErr to set a specific status:
 //
-//	// This will set the status code to 404 (Not Found).
 //	web.RespondJSONError(w, r, fmt.Errorf("resource %w", web.ErrNotFound))
 func RespondJSONError(w http.ResponseWriter, r *http.Request, err error) {
 	respondError(true, w, r, err)

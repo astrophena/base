@@ -28,19 +28,11 @@ import (
 	"go.astrophena.name/base/web/internal/components"
 )
 
-// DebugHandler is an [http.Handler] that serves a debugging "homepage", and
-// provides helpers to register more debug endpoints and reports.
+// DebugHandler serves /debug/ and lets callers add links and status values.
 //
-// The rendered page consists of three sections: header menu, links to other
-// pages and informational key/value pairs.
-//
-// Callers can add to these sections using the [DebugHandler.MenuFunc],
-// [DebugHandler.KV] and [DebugHandler.Link] helpers respectively.
-//
-// Additionally, the [DebugHandler.Handle] method offers a shorthand for
-// correctly registering debug handlers and cross-linking them from /debug/.
-//
-// Methods of [DebugHandler] can be safely called by multiple goroutines.
+// [Debugger] creates it and adds built-in tools. Its methods are safe to call
+// from several goroutines. Callbacks set with [DebugHandler.KVFunc] or
+// [DebugHandler.MenuFunc] must not call methods on the same DebugHandler.
 type DebugHandler struct {
 	mux      *http.ServeMux                 // where this handler is registered
 	mu       sync.RWMutex                   // covers all fields below, mux is protected by it's own mutex
@@ -61,17 +53,17 @@ type (
 	}
 )
 
-// MenuItem is a debug page header menu item.
+// MenuItem is an item in the /debug/ header menu.
 type MenuItem interface {
 	ToHTML() template.HTML
 }
 
-// HTMLItem is a [MenuItem] that can contain arbitrary HTML.
+// HTMLItem adds raw HTML to the /debug/ menu. Use it only with trusted HTML.
 type HTMLItem string
 
 func (hi HTMLItem) ToHTML() template.HTML { return template.HTML(hi) }
 
-// LinkItem is a [MenuItem] that is a link.
+// LinkItem adds a link to the /debug/ menu.
 type LinkItem struct {
 	Name   string
 	Target string
@@ -81,8 +73,8 @@ func (li LinkItem) ToHTML() template.HTML {
 	return template.HTML("<a href=\"" + html.EscapeString(li.Target) + "\">" + html.EscapeString(li.Name) + "</a>")
 }
 
-// Debugger returns the [DebugHandler] registered on mux at /debug/, creating it
-// if necessary.
+// Debugger returns the /debug/ handler for mux, creating it if needed. It adds
+// pprof, force GC, and discovery routes. Protect access to these routes.
 func Debugger(mux *http.ServeMux) *DebugHandler {
 	h, pat := mux.Handler(&http.Request{URL: &url.URL{Path: "/debug/"}})
 	if d, ok := h.(*DebugHandler); ok && pat == "/debug/" {
@@ -248,8 +240,8 @@ func (d *DebugHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Handle registers handler at /debug/<slug> and creates a descriptive entry in
-// /debug/ for it.
+// Handle registers handler at /debug/<slug> and links to it from /debug/.
+// It panics if the route conflicts with another route on the mux.
 func (d *DebugHandler) Handle(slug, desc string, handler http.Handler) {
 	href := "/debug/" + slug
 	d.mux.Handle(href, handler)
@@ -262,7 +254,7 @@ func (d *DebugHandler) HandleFunc(slug, desc string, handler http.HandlerFunc) {
 	d.Handle(slug, desc, http.HandlerFunc(handler))
 }
 
-// KV adds a key/value list item to /debug/.
+// KV adds a key and value to /debug/.
 func (d *DebugHandler) KV(k string, v any) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -271,8 +263,8 @@ func (d *DebugHandler) KV(k string, v any) {
 	}})
 }
 
-// KVFunc adds a key/value list item to /debug/. v is called on every render of
-// /debug/.
+// KVFunc adds a value read each time /debug/ is served. v must not call
+// methods on d.
 func (d *DebugHandler) KVFunc(k string, v func() any) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -289,17 +281,15 @@ func (d *DebugHandler) Link(url, desc string) {
 	})
 }
 
-// MenuFunc sets a function that generates custom menu items for /debug/ page
-// header.
+// MenuFunc sets the items in the /debug/ header menu. f runs on each request
+// and must not call methods on d.
 func (d *DebugHandler) MenuFunc(f func(*http.Request) []MenuItem) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.menuFunc = f
 }
 
-// DebugHandlerDiscovery provides a machine-readable overview of the running service.
-// It's served at /debug/discovery and is intended for use by monitoring tools
-// and automated dashboards.
+// DebugHandlerDiscovery is the JSON response at /debug/discovery.
 type DebugHandlerDiscovery struct {
 	Version  version.Info `json:"version"`
 	Runtime  RuntimeStats `json:"runtime"`
@@ -308,16 +298,16 @@ type DebugHandlerDiscovery struct {
 	Links    []link       `json:"links"`
 }
 
-// RuntimeStats holds live runtime statistics for the service.
+// RuntimeStats is a snapshot of Go runtime values in /debug/discovery.
 type RuntimeStats struct {
 	Uptime        string `json:"uptime"`
 	NumGoroutines int    `json:"num_goroutines"`
 	Memory        struct {
-		// Heap memory currently allocated (MB).
+		// Heap memory currently allocated (MiB).
 		Alloc uint64 `json:"alloc_mb"`
-		// Total memory allocated since startup (MB).
+		// Total memory allocated since startup (MiB).
 		TotalAlloc uint64 `json:"total_alloc_mb"`
-		// Total memory obtained from the OS (MB).
+		// Total memory obtained from the OS (MiB).
 		Sys uint64 `json:"sys_mb"`
 	} `json:"memory"`
 	GC struct {

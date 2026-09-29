@@ -2,13 +2,18 @@
 // Use of this source code is governed by the ISC
 // license that can be found in the LICENSE.md file.
 
-// Package request provides a simplified way to make HTTP requests, especially for JSON APIs.
+// Package request sends HTTP requests and decodes JSON responses. Use [Bytes]
+// for raw responses or [IgnoreResponse] when the response needs no decoding.
+// Make reads JSON and raw byte responses into memory. Set
+// Params.MaxResponseBytes when the expected size is known. Use net/http for
+// large downloads. Unexpected-status bodies are kept up to 64 KiB.
 package request
 
 import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,75 +22,92 @@ import (
 	"time"
 )
 
-// Params defines the parameters needed for making an HTTP request.
+// Params configures a request made by [Make].
 type Params struct {
-	// Method is the HTTP method (GET, POST, etc.) for the request. If not
-	// provided, GET will be used.
+	// Method is the HTTP method. The default is GET.
 	Method string
-	// URL is the target URL of the request.
+	// URL is the full request URL.
 	URL string
-	// Headers is a map of key-value pairs for additional request headers.
+	// Headers adds request headers. Make sets Content-Type for JSON and form
+	// bodies unless Headers already supplies it.
 	Headers map[string]string
-	// Body is any data to be sent in the request body. It will be marshaled to
-	// JSON or:
+	// Body is sent in the request body. Nil sends no body. By default, Make
+	// encodes it as JSON. Two types are handled differently:
 	//
-	//   - If it's type is url.Values, as query string with Content-Type
-	//     header set to "application/x-www-form-urlencoded".
-	//   - If it's type is []byte, as raw bytes with no Content-Type header.
-	//
+	//   - url.Values becomes a form-encoded body.
+	//   - []byte is sent as-is, without an automatic Content-Type.
 	Body any
-	// WantStatusCode is the expected HTTP status code for the response.
-	// If not provided, http.StatusOK (200) will be used.
+	// WantStatusCode is the required response status. The default is 200 OK.
 	WantStatusCode int
-	// HTTPClient is an optional custom http.Client to use for the request.
-	// If not provided, DefaultClient will be used.
+	// HTTPClient is the client used for the request. Nil uses DefaultClient.
 	HTTPClient *http.Client
-	// Scrubber is an optional strings.Replacer that scrubs unwanted data from
-	// error messages.
+	// MaxResponseBytes limits the body of a successful response. Zero means
+	// no limit. It also limits how much of an unexpected-status body is kept.
+	MaxResponseBytes int64
+	// Scrubber replaces text in the returned error's Error() string. It does
+	// not change the underlying error or a StatusError's Body and Headers.
 	Scrubber *strings.Replacer
 }
 
-// DefaultClient is the default [http.Client] used by [Make].
+// DefaultClient is the [http.Client] used by [Make] when Params.HTTPClient is
+// nil. It has a 10-second timeout.
 var DefaultClient = &http.Client{
 	Timeout: 10 * time.Second,
 }
 
-// IgnoreResponse is a type to use with [Make] to skip JSON unmarshaling of the response body.
+// IgnoreResponse tells [Make] to skip response decoding. Make checks the status
+// and drains a successful response body without storing it.
 type IgnoreResponse struct{}
 
-// Bytes is a type to use with [Make] to return the raw response body.
+// Bytes tells [Make] to return the raw response body.
 type Bytes []byte
 
-// StatusError represents an error where an HTTP request returned
-// an unexpected status code.
+// ErrResponseTooLarge reports a successful response that exceeds
+// Params.MaxResponseBytes.
+var ErrResponseTooLarge = errors.New("response body too large")
+
+// StatusError reports a response status that differs from the wanted status
+// (200 unless Params.WantStatusCode is set). Use errors.As to inspect it after
+// [Make] returns.
 type StatusError struct {
-	// WantedStatusCode is the HTTP status code that was expected by the caller
-	// (e.g., http.StatusOK).
+	// WantedStatusCode is the expected HTTP status code.
 	WantedStatusCode int
-	// StatusCode is the actual HTTP status code received in the response.
+	// StatusCode is the HTTP status code received.
 	StatusCode int
-	// Headers are the HTTP headers from the response.
+	// Headers are the response headers.
 	Headers http.Header
-	// Body is the raw body of the HTTP response.
+	// Body contains up to 64 KiB of the response body, or fewer bytes when
+	// Params.MaxResponseBytes sets a smaller limit.
 	Body []byte
+	// BodyTruncated reports whether Body omits bytes from the response.
+	BodyTruncated bool
 }
 
+// Error includes the expected status, actual status, and retained body.
 func (e *StatusError) Error() string {
+	if e.BodyTruncated {
+		return fmt.Sprintf("want %d, got %d: %s [body truncated]", e.WantedStatusCode, e.StatusCode, e.Body)
+	}
 	return fmt.Sprintf("want %d, got %d: %s", e.WantedStatusCode, e.StatusCode, e.Body)
 }
 
-// Make sends an HTTP request and tries to parse the response.
+// Make sends a request and returns its response. It uses ctx for cancellation.
 //
-// The Response type parameter determines how the response body is handled:
+// Response controls how the body is used:
 //
-//   - If Response is [IgnoreResponse], the response body is ignored and no parsing is attempted.
-//   - If Response is [Bytes], the raw response body is returned without any parsing.
-//   - Otherwise, the response body is expected to be JSON and is unmarshaled into a variable of type Response.
+//   - [IgnoreResponse] skips decoding.
+//   - [Bytes] returns the raw body.
+//   - Any other type is decoded from JSON, regardless of Content-Type.
 //
-// It returns the parsed response of type Response and an error if the request fails or parsing fails.
-// For non-200 status codes, it returns an instance of [StatusError].
+// If the status differs from Params.WantStatusCode (200 by default), Make
+// returns a wrapped [StatusError] with up to 64 KiB of its body. If a successful
+// response exceeds Params.MaxResponseBytes, Make returns [ErrResponseTooLarge].
+// Use the result only when err is nil.
 func Make[Response any](ctx context.Context, p Params) (Response, error) {
 	var resp Response
+	if p.MaxResponseBytes < 0 {
+		return resp, scrubErr(errors.New("max response bytes must not be negative"), p.Scrubber)
+	}
 
 	var (
 		data        []byte
@@ -129,7 +151,9 @@ func Make[Response any](ctx context.Context, p Params) (Response, error) {
 		}
 	}
 	if data != nil && contentType != "" {
-		req.Header.Set("Content-Type", contentType)
+		if _, ok := req.Header["Content-Type"]; !ok {
+			req.Header.Set("Content-Type", contentType)
+		}
 	}
 
 	httpc := DefaultClient
@@ -143,27 +167,45 @@ func Make[Response any](ctx context.Context, p Params) (Response, error) {
 	}
 	defer res.Body.Close()
 
-	b, err := io.ReadAll(res.Body)
-	if err != nil {
-		return resp, scrubErr(err, p.Scrubber)
-	}
-
 	wantCode := http.StatusOK
 	if p.WantStatusCode != 0 {
 		wantCode = p.WantStatusCode
 	}
+	if res.StatusCode == wantCode {
+		if _, ok := any(&resp).(*IgnoreResponse); ok {
+			tooLarge, err := discardBody(res.Body, p.MaxResponseBytes)
+			if err != nil {
+				return resp, scrubErr(err, p.Scrubber)
+			}
+			if tooLarge {
+				return resp, scrubErr(fmt.Errorf("%s %q: response exceeds %d bytes: %w", method, p.URL, p.MaxResponseBytes, ErrResponseTooLarge), p.Scrubber)
+			}
+			return resp, nil
+		}
+	}
+
+	limit := p.MaxResponseBytes
+	if res.StatusCode != wantCode && (limit == 0 || limit > maxStatusErrorBytes) {
+		limit = maxStatusErrorBytes
+	}
+	b, truncated, err := readBody(res.Body, limit)
+	if err != nil {
+		return resp, scrubErr(err, p.Scrubber)
+	}
 	if res.StatusCode != wantCode {
-		return resp, scrubErr(fmt.Errorf("%s %q: %w", p.Method, p.URL, &StatusError{
+		return resp, scrubErr(fmt.Errorf("%s %q: %w", method, p.URL, &StatusError{
 			WantedStatusCode: wantCode,
 			StatusCode:       res.StatusCode,
 			Headers:          res.Header,
 			Body:             b,
+			BodyTruncated:    truncated,
 		}), p.Scrubber)
+	}
+	if truncated {
+		return resp, scrubErr(fmt.Errorf("%s %q: response exceeds %d bytes: %w", method, p.URL, p.MaxResponseBytes, ErrResponseTooLarge), p.Scrubber)
 	}
 
 	switch v := any(&resp).(type) {
-	case *IgnoreResponse:
-		return resp, nil
 	case *Bytes:
 		*v = b
 		return resp, nil
@@ -173,6 +215,42 @@ func Make[Response any](ctx context.Context, p Params) (Response, error) {
 		}
 	}
 	return resp, nil
+}
+
+const maxStatusErrorBytes = 64 << 10
+
+func readBody(r io.Reader, limit int64) ([]byte, bool, error) {
+	if limit == 0 {
+		b, err := io.ReadAll(r)
+		return b, false, err
+	}
+	b, err := io.ReadAll(io.LimitReader(r, limit))
+	if err != nil || int64(len(b)) < limit {
+		return b, false, err
+	}
+	more, err := hasMore(r)
+	return b, more, err
+}
+
+func discardBody(r io.Reader, limit int64) (bool, error) {
+	if limit == 0 {
+		_, err := io.Copy(io.Discard, r)
+		return false, err
+	}
+	n, err := io.Copy(io.Discard, io.LimitReader(r, limit))
+	if err != nil || n < limit {
+		return false, err
+	}
+	return hasMore(r)
+}
+
+func hasMore(r io.Reader) (bool, error) {
+	var b [1]byte
+	_, err := io.ReadFull(r, b[:])
+	if err == io.EOF {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 type scrubbedError struct {

@@ -36,46 +36,44 @@ var (
 	connNetworkContextKey = ctxkey.New("web.connNetwork", "tcp")
 )
 
-// Server is used to configure the HTTP server started by
-// [Server.ListenAndServe].
+// Server serves requests from Mux with logging, security headers, and static
+// files. Mux must be set before using the server.
 //
-// All fields of Server can't be modified after [Server.StaticHashName], [Server.ListenAndServe]
-// or [Server.ServeHTTP] is called for a first time.
+// Configure Server before calling [Server.StaticHashName], [Server.ServeHTTP],
+// or [Server.ListenAndServe]. Do not change its fields afterward.
 type Server struct {
-	// Mux is a http.ServeMux to serve.
+	// Mux handles application routes. It must not be nil. Server adds /static/
+	// and, when Debuggable is true, /debug/ routes to it.
 	Mux *http.ServeMux
-	// Debuggable specifies whether to register debug handlers at /debug/.
+	// Debuggable adds /debug/ routes, including pprof and a force-GC handler.
+	// Expose these routes only through a protected endpoint.
 	Debuggable bool
-	// Middleware specifies an optional HTTP middleware that's applied to
-	// each request.
+	// Middleware wraps all requests, including static and debug routes.
 	Middleware []Middleware
-	// Addr is a network address to listen on.
-	// For TCP, use "host:port".
-	// For a Unix socket, use an absolute file path (e.g., "/run/service/socket").
-	// To use systemd socket activation, use "sd-socket:<name>", where <name> is
-	// the name of the socket defined in the systemd socket unit.
+	// Addr selects a listener: "host:port" for TCP, an absolute path for a
+	// Unix socket, or "sd-socket:<name>" for a systemd socket. In the last
+	// form, name must match a name in LISTEN_FDNAMES.
 	Addr string
-	// Ready specifies an optional function to be called when the server is ready
-	// to serve requests.
+	// Ready is called after the listener is opened.
 	Ready func()
-	// StaticFS specifies an optional filesystem containing static assets (like CSS,
-	// JS, images) to be served. If provided, it's combined with the embedded
-	// StaticFS and served under the "/static/" path prefix.
-	// Files in this FS take precedence over the embedded ones if names conflict.
+	// StaticFS adds files under /static/. The filesystem must contain a static
+	// directory. Its files take precedence over embedded files with the same
+	// names.
 	StaticFS fs.FS
-	// CrossOriginProtection configures CSRF protection. Defaults are used if nil.
+	// CrossOriginProtection handles CSRF checks. A new default instance is used
+	// when this field is nil.
 	CrossOriginProtection *http.CrossOriginProtection
-	// CSP is a multiplexer for Content Security Policies.
-	// If nil, a default restrictive policy is used.
+	// CSP selects a Content Security Policy by request. Requests with no
+	// matching policy use the default policy.
 	CSP *CSPMux
-	// NotifySystemd specifies whether to notify systemd when the server is ready and where the server is stopping.
-	// Also, the server will start the systemd watchdog timer if enabled.
+	// NotifySystemd sends ready and stopping notifications and runs the
+	// systemd watchdog when configured.
 	NotifySystemd bool
-	// TrustedProxies is a list of proxy CIDR ranges trusted to provide X-Forwarded-For.
-	// If nil, 127.0.0.0/8 is trusted by default. If empty but non-nil,
-	// X-Forwarded-For is ignored.
+	// TrustedProxies lists TCP proxy ranges allowed to set X-Forwarded-For.
+	// Nil trusts 127.0.0.0/8; an empty non-nil slice trusts no TCP proxies.
+	// Requests over Unix sockets always trust X-Forwarded-For.
 	TrustedProxies []netip.Prefix
-	// MetricsEndpoint labels this server's metrics. It defaults to "server".
+	// MetricsEndpoint labels this server's HTTP metrics. It defaults to "server".
 	MetricsEndpoint string
 
 	handler syncx.Lazy[*handler]
@@ -363,18 +361,17 @@ func (s *Server) initHandler() *handler {
 	return h
 }
 
-// StaticHashName returns the cache-busting hashed name for a static file path.
-// If the path exists, its hashed name is returned. Otherwise, the original name is returned.
+// StaticHashName returns the hashed path for a static file. Pass a path
+// such as "static/css/main.css". If the file cannot be read, it returns name.
 func (s *Server) StaticHashName(name string) string {
 	return s.handler.Get(s.initHandler).static.HashName(name)
 }
 
-// StaticHashName returns the cache-busting hashed name for a static file path
-// for the server associated with the given request context.
+// StaticHashName returns the hashed static file path for the server in ctx.
 //
-// It panics if the context does not have a server. This is typically the case
-// when the function is called outside of a request handler for a server from
-// this package.
+// Use it with a request served by [Server.ListenAndServe]. It panics if ctx
+// has no server. A request passed directly to [Server.ServeHTTP] normally has
+// no server in its context.
 func StaticHashName(ctx context.Context, name string) string {
 	s, ok := serverContextKey.ValueOk(ctx)
 	if !ok {
@@ -494,10 +491,8 @@ func (s *Server) ListenAndServe(ctx context.Context) error {
 //go:embed static
 var staticFS embed.FS
 
-// StaticFS is a [hashfs.FS] containing the base static resources (like default CSS)
-// served by the [Server] under the "/static/" path prefix.
+// StaticFS contains the embedded files served under /static/.
 //
-// If you provide a custom Server.StaticFS, you must use the [Server.StaticHashName]
-// method to generate correct hashed URLs for all static assets (both embedded and
-// custom).
+// Use [Server.StaticHashName] to make URLs that change when custom static
+// files change.
 var StaticFS = hashfs.NewFS(staticFS)

@@ -40,8 +40,8 @@ var (
 	goGCPause     = metrics.MustCounter("go_gc_pause_seconds_total", "Cumulative GC pause duration in seconds.")
 )
 
-// RegisterMetrics adds HTTP and Go runtime metrics to r. Call it before serving
-// requests. Runtime values are read when someone scrapes the registry.
+// RegisterMetrics adds HTTP and Go runtime metrics to r. Call it before serving.
+// Runtime values are read when someone scrapes the registry.
 func RegisterMetrics(r *metrics.Registry) error {
 	if err := r.Register(requests, requestDuration, responseSize, inFlight,
 		connectionsAccepted, connectionsOpen, connectionsHijacked, hijackedOpen, hijackedDuration); err != nil {
