@@ -7,7 +7,7 @@ require (
 	github.com/go4org/hashtriemap v0.0.0-20251130024219-545ba229f689
 	github.com/lmittmann/tint v1.1.3
 	github.com/restic/chunker v0.5.0
-	golang.org/x/sync v0.22.0
+	golang.org/x/sync v0.23.0
 	golang.org/x/term v0.46.0
 	rsc.io/markdown v0.0.0-20241212154241-6bf72452917f
 )
